@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-10">
+    <div class="bg-white shadow-md rounded-lg p-8">
+        <h1 class="text-2xl font-bold mb-6 text-center">Register</h1>
+        <form method="POST" action="">
+            {{ form.hidden_tag() }}
+            <div class="mb-4">
+                {{ form.username.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.username(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.username.errors %}
+                    {% for error in form.username.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <div class="mb-4">
+                {{ form.email.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.email(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.email.errors %}
+                    {% for error in form.email.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <div class="mb-4">
+                {{ form.password.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.password(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.password.errors %}
+                    {% for error in form.password.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <div class="mb-6">
+                {{ form.password2.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.password2(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.password2.errors %}
+                    {% for error in form.password2.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <div>
+                {{ form.submit(class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 cursor-pointer") }}
+            </div>
+        </form>
+        <p class="mt-4 text-center text-gray-600">
+            Already have an account? <a href="{{ url_for('auth.login') }}" class="text-blue-600 hover:underline">Sign in</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% if title %}{{ title }} - {% endif %}News Staging App{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    {% if current_user.is_authenticated %}
+    <nav class="bg-blue-600 text-white shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('main.dashboard') }}" class="text-xl font-bold">News Staging</a>
+                    <a href="{{ url_for('main.dashboard') }}" class="hover:text-blue-200">Dashboard</a>
+                    {% if current_user.has_role('admin') %}
+                    <a href="{{ url_for('admin.index') }}" class="hover:text-blue-200">Admin</a>
+                    {% endif %}
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm">{{ current_user.username }}</span>
+                    {% if current_user.publications %}
+                    <div class="flex space-x-1">
+                        {% for pub in current_user.publications %}
+                        <span class="text-xs bg-blue-700 px-2 py-1 rounded">{{ pub.name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <a href="{{ url_for('auth.logout') }}" class="hover:text-blue-200">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="container mx-auto px-4 py-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="mb-4 p-4 rounded {% if category == 'error' %}bg-red-100 text-red-700{% elif category == 'success' %}bg-green-100 text-green-700{% else %}bg-blue-100 text-blue-700{% endif %}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

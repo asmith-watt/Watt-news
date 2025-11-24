@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="mb-4">
+        <a href="{{ url_for('main.dashboard') }}" class="text-blue-600 hover:underline">&larr; Back to Dashboard</a>
+    </div>
+
+    <div class="bg-white shadow-md rounded-lg overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">{{ content.title }}</h1>
+                    <div class="mt-2 flex items-center space-x-4 text-sm text-gray-600">
+                        <span>Status:
+                            <span class="px-2 py-1 text-xs rounded-full
+                                {% if content.status == 'staged' %}bg-yellow-100 text-yellow-800
+                                {% elif content.status == 'approved' %}bg-green-100 text-green-800
+                                {% elif content.status == 'published' %}bg-blue-100 text-blue-800
+                                {% elif content.status == 'rejected' %}bg-red-100 text-red-800
+                                {% endif %}">
+                                {{ content.status }}
+                            </span>
+                        </span>
+                        {% if content.author %}
+                        <span>Author: {{ content.author }}</span>
+                        {% endif %}
+                        {% if content.source_name %}
+                        <span>Source: {{ content.source_name }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="flex space-x-2">
+                    {% if not content.pushed_to_cms %}
+                    <button onclick="updateStatus('approved')"
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Approve
+                    </button>
+                    <button onclick="updateStatus('rejected')"
+                            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                        Reject
+                    </button>
+                    <button onclick="pushToCMS()"
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Push to CMS
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="px-6 py-4">
+            {% if content.image_url %}
+            <img src="{{ content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded mb-4">
+            {% endif %}
+
+            {% if content.summary %}
+            <div class="mb-4 p-4 bg-blue-50 rounded">
+                <h3 class="font-bold text-gray-700 mb-2">Summary</h3>
+                <p class="text-gray-700">{{ content.summary }}</p>
+            </div>
+            {% endif %}
+
+            {% if content.content %}
+            <div class="prose max-w-none">
+                {{ content.content|safe }}
+            </div>
+            {% endif %}
+
+            <div class="mt-6 pt-6 border-t text-sm text-gray-600">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <strong>Created:</strong> {{ content.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </div>
+                    {% if content.published_date %}
+                    <div>
+                        <strong>Published:</strong> {{ content.published_date.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </div>
+                    {% endif %}
+                    {% if content.source_url %}
+                    <div>
+                        <strong>Source URL:</strong> <a href="{{ content.source_url }}" target="_blank" class="text-blue-600 hover:underline">View Original</a>
+                    </div>
+                    {% endif %}
+                    {% if content.pushed_to_cms %}
+                    <div>
+                        <strong>Pushed to CMS:</strong> {{ content.pushed_at.strftime('%Y-%m-%d %H:%M:%S') }} by {{ content.pushed_by.username }}
+                    </div>
+                    {% if content.cms_id %}
+                    <div>
+                        <strong>CMS ID:</strong> {{ content.cms_id }}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateStatus(status) {
+    if (!confirm(`Are you sure you want to ${status} this content?`)) {
+        return;
+    }
+
+    fetch('{{ url_for("main.update_status", id=content.id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function pushToCMS() {
+    if (!confirm('Are you sure you want to push this content to the CMS?')) {
+        return;
+    }
+
+    fetch('{{ url_for("main.push_to_cms", id=content.id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Content successfully pushed to CMS!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <a href="{{ url_for('admin.publications') }}" class="block bg-white shadow-md rounded-lg p-6 hover:shadow-lg transition">
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Publications</h2>
+        <p class="text-gray-600">Manage publications and their CMS configurations</p>
+    </a>
+
+    <a href="{{ url_for('admin.users') }}" class="block bg-white shadow-md rounded-lg p-6 hover:shadow-lg transition">
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Users</h2>
+        <p class="text-gray-600">Manage user accounts and permissions</p>
+    </a>
+
+    <a href="{{ url_for('main.dashboard') }}" class="block bg-white shadow-md rounded-lg p-6 hover:shadow-lg transition">
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Content</h2>
+        <p class="text-gray-600">View all news content</p>
+    </a>
+</div>
+{% endblock %}

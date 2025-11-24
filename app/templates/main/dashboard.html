@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">News Dashboard</h1>
+</div>
+
+<div class="mb-6 flex space-x-2">
+    <a href="{{ url_for('main.dashboard', status='all') }}"
+       class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        All
+    </a>
+    <a href="{{ url_for('main.dashboard', status='staged') }}"
+       class="px-4 py-2 rounded {% if status == 'staged' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Staged
+    </a>
+    <a href="{{ url_for('main.dashboard', status='approved') }}"
+       class="px-4 py-2 rounded {% if status == 'approved' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Approved
+    </a>
+    <a href="{{ url_for('main.dashboard', status='published') }}"
+       class="px-4 py-2 rounded {% if status == 'published' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Published
+    </a>
+    <a href="{{ url_for('main.dashboard', status='rejected') }}"
+       class="px-4 py-2 rounded {% if status == 'rejected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Rejected
+    </a>
+</div>
+
+<div class="bg-white shadow-md rounded-lg overflow-hidden">
+    {% if content.items %}
+    <table class="min-w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for item in content.items %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <a href="{{ url_for('main.view_content', id=item.id) }}" class="text-blue-600 hover:underline">
+                        {{ item.title[:80] }}{% if item.title|length > 80 %}...{% endif %}
+                    </a>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">{{ item.source_name or 'N/A' }}</td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 text-xs rounded-full
+                        {% if item.status == 'staged' %}bg-yellow-100 text-yellow-800
+                        {% elif item.status == 'approved' %}bg-green-100 text-green-800
+                        {% elif item.status == 'published' %}bg-blue-100 text-blue-800
+                        {% elif item.status == 'rejected' %}bg-red-100 text-red-800
+                        {% endif %}">
+                        {{ item.status }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="px-6 py-4 text-sm">
+                    <a href="{{ url_for('main.view_content', id=item.id) }}"
+                       class="text-blue-600 hover:underline">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="px-6 py-4 bg-gray-50 border-t">
+        <div class="flex justify-between items-center">
+            <div class="text-sm text-gray-600">
+                Showing {{ content.items|length }} of {{ content.total }} items
+            </div>
+            <div class="flex space-x-2">
+                {% if content.has_prev %}
+                <a href="{{ url_for('main.dashboard', page=content.prev_num, status=status) }}"
+                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Previous</a>
+                {% endif %}
+                {% if content.has_next %}
+                <a href="{{ url_for('main.dashboard', page=content.next_num, status=status) }}"
+                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Next</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="px-6 py-12 text-center text-gray-500">
+        No news content found.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

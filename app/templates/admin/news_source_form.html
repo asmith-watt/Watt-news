@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-4">
+        <a href="{{ url_for('admin.news_sources', pub_id=publication.id) }}" class="text-blue-600 hover:underline">&larr; Back to Sources</a>
+    </div>
+
+    <div class="bg-white shadow-md rounded-lg p-8">
+        <h1 class="text-2xl font-bold mb-6">{% if source %}Edit{% else %}New{% endif %} News Source</h1>
+        <p class="text-gray-600 mb-6">Publication: <strong>{{ publication.name }}</strong></p>
+
+        <form method="POST" action="">
+            {{ form.hidden_tag() }}
+
+            <div class="mb-4">
+                {{ form.name.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.name(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.name.errors %}
+                    {% for error in form.name.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="mb-4">
+                {{ form.source_type.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.source_type(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.source_type.errors %}
+                    {% for error in form.source_type.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">e.g., RSS, API, Website</p>
+            </div>
+
+            <div class="mb-4">
+                {{ form.url.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.url(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.url.errors %}
+                    {% for error in form.url.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="mb-6">
+                <label class="flex items-center">
+                    {{ form.is_active(class="mr-2") }}
+                    <span class="text-gray-700 font-bold">{{ form.is_active.label.text }}</span>
+                </label>
+            </div>
+
+            <div class="flex space-x-2">
+                {{ form.submit(class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer") }}
+                <a href="{{ url_for('admin.news_sources', pub_id=publication.id) }}"
+                   class="px-6 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
