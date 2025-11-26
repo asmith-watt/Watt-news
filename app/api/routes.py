@@ -133,6 +133,7 @@ def get_news_sources(publication_id):
     return jsonify({
         'publication_id': publication_id,
         'publication_name': publication.name,
+        'industry': publication.industry_description,
         'sources': [
             {
                 'id': source.id,
@@ -156,7 +157,8 @@ def get_publications():
             {
                 'id': pub.id,
                 'name': pub.name,
-                'slug': pub.slug
+                'slug': pub.slug,
+                'industry': pub.industry_description
             }
             for pub in publications
         ]

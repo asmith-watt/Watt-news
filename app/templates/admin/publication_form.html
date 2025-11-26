@@ -34,6 +34,17 @@
             </div>
 
             <div class="mb-4">
+                {{ form.industry_description.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.industry_description(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", rows="4") }}
+                {% if form.industry_description.errors %}
+                    {% for error in form.industry_description.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">Description of the industry or vertical this publication covers</p>
+            </div>
+
+            <div class="mb-4">
                 {{ form.cms_url.label(class="block text-gray-700 font-bold mb-2") }}
                 {{ form.cms_url(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
                 {% if form.cms_url.errors %}
@@ -45,12 +56,29 @@
 
             <div class="mb-4">
                 {{ form.cms_api_key.label(class="block text-gray-700 font-bold mb-2") }}
-                {{ form.cms_api_key(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                <div class="flex gap-2">
+                    <input type="text" id="cms_api_key_display"
+                           value="{{ publication.cms_api_key if publication and publication.cms_api_key else '' }}"
+                           readonly
+                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:border-blue-500 font-mono text-sm">
+                    {{ form.cms_api_key(id="cms_api_key_hidden", class="hidden") }}
+                    {% if publication %}
+                    <button type="button" onclick="copyApiKey()"
+                            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                        Copy
+                    </button>
+                    <button type="button" onclick="generateApiKey({{ publication.id }})"
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Generate New
+                    </button>
+                    {% endif %}
+                </div>
                 {% if form.cms_api_key.errors %}
                     {% for error in form.cms_api_key.errors %}
                     <p class="text-red-500 text-sm mt-1">{{ error }}</p>
                     {% endfor %}
                 {% endif %}
+                <p class="text-gray-500 text-sm mt-1">API key for CMS integration</p>
             </div>
 
             <div class="mb-6">
@@ -70,4 +98,67 @@
         </form>
     </div>
 </div>
+
+<script>
+function copyApiKey() {
+    const apiKeyInput = document.getElementById('cms_api_key_display');
+    const value = apiKeyInput.value;
+
+    if (!value) {
+        alert('No API key to copy. Please generate one first.');
+        return;
+    }
+
+    navigator.clipboard.writeText(value).then(() => {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        btn.classList.add('bg-green-600', 'hover:bg-green-700');
+
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            btn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+        }, 2000);
+    }).catch(err => {
+        alert('Failed to copy API key: ' + err);
+    });
+}
+
+function generateApiKey(publicationId) {
+    if (!confirm('Are you sure you want to generate a new API key? This will invalidate the old key.')) {
+        return;
+    }
+
+    fetch(`/admin/publications/${publicationId}/generate-api-key`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('cms_api_key_display').value = data.api_key;
+            document.getElementById('cms_api_key_hidden').value = data.api_key;
+
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Generated!';
+
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+
+            alert('New API key generated and saved successfully!');
+        } else {
+            alert('Failed to generate API key');
+        }
+    })
+    .catch(error => {
+        alert('Error generating API key: ' + error);
+    });
+}
+</script>
 {% endblock %}

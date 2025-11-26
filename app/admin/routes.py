@@ -1,6 +1,7 @@
-from flask import render_template, redirect, url_for, flash, request
+from flask import render_template, redirect, url_for, flash, request, jsonify
 from flask_login import login_required, current_user
 from functools import wraps
+import secrets
 from app import db
 from app.models import Publication, NewsSource, User, Role
 from app.admin import bp
@@ -15,6 +16,11 @@ def admin_required(f):
             return redirect(url_for('main.dashboard'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+def generate_api_key():
+    """Generate a secure random API key"""
+    return secrets.token_urlsafe(32)
 
 
 @bp.route('/')
@@ -41,6 +47,7 @@ def new_publication():
         publication = Publication(
             name=form.name.data,
             slug=form.slug.data,
+            industry_description=form.industry_description.data,
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
             is_active=form.is_active.data
@@ -62,6 +69,7 @@ def edit_publication(id):
     if form.validate_on_submit():
         publication.name = form.name.data
         publication.slug = form.slug.data
+        publication.industry_description = form.industry_description.data
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data
@@ -81,6 +89,17 @@ def delete_publication(id):
     db.session.commit()
     flash('Publication deleted successfully!', 'success')
     return redirect(url_for('admin.publications'))
+
+
+@bp.route('/publications/<int:id>/generate-api-key', methods=['POST'])
+@login_required
+@admin_required
+def generate_publication_api_key(id):
+    publication = Publication.query.get_or_404(id)
+    new_api_key = generate_api_key()
+    publication.cms_api_key = new_api_key
+    db.session.commit()
+    return jsonify({'success': True, 'api_key': new_api_key})
 
 
 @bp.route('/publications/<int:pub_id>/sources')

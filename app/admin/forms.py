@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField
+from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField
 from wtforms.validators import DataRequired, Optional, Email, EqualTo, ValidationError
 from app.models import User
 
@@ -7,6 +7,7 @@ from app.models import User
 class PublicationForm(FlaskForm):
     name = StringField('Publication Name', validators=[DataRequired()])
     slug = StringField('Slug', validators=[DataRequired()])
+    industry_description = TextAreaField('Industry Description', validators=[Optional()])
     cms_url = StringField('CMS URL', validators=[Optional()])
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
     is_active = BooleanField('Active')
