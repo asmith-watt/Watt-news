@@ -117,19 +117,7 @@ Create a single news content item.
 **Example cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/news \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your_api_key_here" \
-  -d '{
-    "title": "Breaking News",
-    "publication_id": 1,
-    "content": "This is the full article content...",
-    "summary": "Brief summary",
-    "author": "John Doe",
-    "source_url": "https://example.com/article",
-    "published_date": "2024-11-26T10:30:00",
-    "status": "staged"
-  }'
+
 ```
 
 ---

@@ -52,9 +52,18 @@ def validate_publication_access(publication_id):
         return True, None
 
     # Publication-specific key can only access its own publication
-    if g.authenticated_publication.id != publication_id:
+    authenticated_pub_id = g.authenticated_publication.id
+
+    # Debug logging
+    current_app.logger.info(f"Publication Access Check: API key pub_id={authenticated_pub_id}, requested pub_id={publication_id}, match={authenticated_pub_id == publication_id}")
+
+    if authenticated_pub_id != publication_id:
         return False, (
-            jsonify({'error': 'API key does not have access to this publication'}),
+            jsonify({
+                'error': 'API key does not have access to this publication',
+                'authenticated_publication_id': authenticated_pub_id,
+                'requested_publication_id': publication_id
+            }),
             403
         )
 
@@ -74,18 +83,24 @@ def create_news():
         if field not in data:
             return jsonify({'error': f'Missing required field: {field}'}), 400
 
+    # Convert publication_id to integer if it's a string
+    try:
+        publication_id = int(data['publication_id'])
+    except (ValueError, TypeError):
+        return jsonify({'error': 'publication_id must be a valid integer'}), 400
+
     # Validate API key has access to this publication
-    is_valid, error_response = validate_publication_access(data['publication_id'])
+    is_valid, error_response = validate_publication_access(publication_id)
     if not is_valid:
         return error_response
 
-    publication = Publication.query.get(data['publication_id'])
+    publication = Publication.query.get(publication_id)
     if not publication:
         return jsonify({'error': 'Publication not found'}), 404
 
     try:
         content = NewsContent(
-            publication_id=data['publication_id'],
+            publication_id=publication_id,
             title=data['title'],
             content=data.get('content'),
             summary=data.get('summary'),
@@ -131,19 +146,26 @@ def create_news_bulk():
                     errors.append({'index': idx, 'error': f'Missing required field: {field}'})
                     continue
 
+            # Convert publication_id to integer if it's a string
+            try:
+                publication_id = int(item['publication_id'])
+            except (ValueError, TypeError):
+                errors.append({'index': idx, 'error': 'publication_id must be a valid integer'})
+                continue
+
             # Validate API key has access to this publication
-            is_valid, _ = validate_publication_access(item['publication_id'])
+            is_valid, _ = validate_publication_access(publication_id)
             if not is_valid:
                 errors.append({'index': idx, 'error': 'API key does not have access to this publication'})
                 continue
 
-            publication = Publication.query.get(item['publication_id'])
+            publication = Publication.query.get(publication_id)
             if not publication:
                 errors.append({'index': idx, 'error': 'Publication not found'})
                 continue
 
             content = NewsContent(
-                publication_id=item['publication_id'],
+                publication_id=publication_id,
                 title=item['title'],
                 content=item.get('content'),
                 summary=item.get('summary'),
