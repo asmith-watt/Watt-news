@@ -1,4 +1,4 @@
-from flask import request, jsonify, current_app
+from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime
 from app import db
@@ -7,13 +7,58 @@ from app.api import bp
 
 
 def require_api_key(f):
+    """
+    Validates API key against:
+    1. Global N8N_API_KEY (system-wide access)
+    2. Publication-specific cms_api_key (restricted access)
+
+    If using a publication-specific key, stores the publication in g.authenticated_publication
+    for validation in the route handler.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.headers.get('X-API-Key')
-        if not api_key or api_key != current_app.config.get('N8N_API_KEY'):
-            return jsonify({'error': 'Invalid or missing API key'}), 401
-        return f(*args, **kwargs)
+
+        if not api_key:
+            return jsonify({'error': 'Missing API key'}), 401
+
+        # Check global API key first
+        if api_key == current_app.config.get('N8N_API_KEY'):
+            g.authenticated_publication = None  # Global access
+            return f(*args, **kwargs)
+
+        # Check publication-specific API keys
+        publication = Publication.query.filter_by(
+            cms_api_key=api_key,
+            is_active=True
+        ).first()
+
+        if publication:
+            g.authenticated_publication = publication  # Restricted access
+            return f(*args, **kwargs)
+
+        return jsonify({'error': 'Invalid API key'}), 401
+
     return decorated_function
+
+
+def validate_publication_access(publication_id):
+    """
+    Validates that the API key has access to the specified publication.
+    Returns (is_valid, error_response)
+    """
+    # Global API key has access to all publications
+    if g.get('authenticated_publication') is None:
+        return True, None
+
+    # Publication-specific key can only access its own publication
+    if g.authenticated_publication.id != publication_id:
+        return False, (
+            jsonify({'error': 'API key does not have access to this publication'}),
+            403
+        )
+
+    return True, None
 
 
 @bp.route('/news', methods=['POST'])
@@ -28,6 +73,11 @@ def create_news():
     for field in required_fields:
         if field not in data:
             return jsonify({'error': f'Missing required field: {field}'}), 400
+
+    # Validate API key has access to this publication
+    is_valid, error_response = validate_publication_access(data['publication_id'])
+    if not is_valid:
+        return error_response
 
     publication = Publication.query.get(data['publication_id'])
     if not publication:
@@ -81,6 +131,12 @@ def create_news_bulk():
                     errors.append({'index': idx, 'error': f'Missing required field: {field}'})
                     continue
 
+            # Validate API key has access to this publication
+            is_valid, _ = validate_publication_access(item['publication_id'])
+            if not is_valid:
+                errors.append({'index': idx, 'error': 'API key does not have access to this publication'})
+                continue
+
             publication = Publication.query.get(item['publication_id'])
             if not publication:
                 errors.append({'index': idx, 'error': 'Publication not found'})
@@ -121,6 +177,11 @@ def create_news_bulk():
 @bp.route('/sources/<int:publication_id>', methods=['GET'])
 @require_api_key
 def get_news_sources(publication_id):
+    # Validate API key has access to this publication
+    is_valid, error_response = validate_publication_access(publication_id)
+    if not is_valid:
+        return error_response
+
     publication = Publication.query.get(publication_id)
     if not publication:
         return jsonify({'error': 'Publication not found'}), 404
@@ -150,7 +211,12 @@ def get_news_sources(publication_id):
 @bp.route('/publications', methods=['GET'])
 @require_api_key
 def get_publications():
-    publications = Publication.query.filter_by(is_active=True).all()
+    # If using publication-specific API key, only return that publication
+    if g.get('authenticated_publication'):
+        publications = [g.authenticated_publication]
+    else:
+        # Global API key gets all active publications
+        publications = Publication.query.filter_by(is_active=True).all()
 
     return jsonify({
         'publications': [
