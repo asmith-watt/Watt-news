@@ -255,3 +255,28 @@ def get_publications():
             for pub in publications
         ]
     })
+
+
+@bp.route('/publications/<int:publication_id>', methods=['GET'])
+@require_api_key
+def get_publication(publication_id):
+    # Validate API key has access to this publication
+    is_valid, error_response = validate_publication_access(publication_id)
+    if not is_valid:
+        return error_response
+
+    publication = Publication.query.get(publication_id)
+    if not publication:
+        return jsonify({'error': 'Publication not found'}), 404
+
+    return jsonify({
+        'id': publication.id,
+        'name': publication.name,
+        'slug': publication.slug,
+        'industry_description': publication.industry_description,
+        'reader_personas': publication.reader_personas,
+        'reader_pain_points': publication.reader_pain_points,
+        'cms_url': publication.cms_url,
+        'is_active': publication.is_active,
+        'created_at': publication.created_at.isoformat() if publication.created_at else None
+    })
