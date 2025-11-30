@@ -60,6 +60,8 @@ class Publication(db.Model):
     name = db.Column(db.String(128), unique=True, nullable=False)
     slug = db.Column(db.String(128), unique=True, nullable=False, index=True)
     industry_description = db.Column(db.Text)
+    reader_personas = db.Column(db.Text)
+    reader_pain_points = db.Column(db.Text)
     cms_url = db.Column(db.String(256))
     cms_api_key = db.Column(db.String(256))
     is_active = db.Column(db.Boolean, default=True)

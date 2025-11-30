@@ -217,6 +217,8 @@ def get_news_sources(publication_id):
         'publication_id': publication_id,
         'publication_name': publication.name,
         'industry': publication.industry_description,
+        'reader_personas': publication.reader_personas,
+        'reader_pain_points': publication.reader_pain_points,
         'sources': [
             {
                 'id': source.id,
@@ -246,7 +248,9 @@ def get_publications():
                 'id': pub.id,
                 'name': pub.name,
                 'slug': pub.slug,
-                'industry': pub.industry_description
+                'industry': pub.industry_description,
+                'reader_personas': pub.reader_personas,
+                'reader_pain_points': pub.reader_pain_points
             }
             for pub in publications
         ]

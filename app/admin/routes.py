@@ -48,6 +48,8 @@ def new_publication():
             name=form.name.data,
             slug=form.slug.data,
             industry_description=form.industry_description.data,
+            reader_personas=form.reader_personas.data,
+            reader_pain_points=form.reader_pain_points.data,
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
             is_active=form.is_active.data
@@ -70,6 +72,8 @@ def edit_publication(id):
         publication.name = form.name.data
         publication.slug = form.slug.data
         publication.industry_description = form.industry_description.data
+        publication.reader_personas = form.reader_personas.data
+        publication.reader_pain_points = form.reader_pain_points.data
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data

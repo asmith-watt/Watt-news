@@ -45,6 +45,28 @@
             </div>
 
             <div class="mb-4">
+                {{ form.reader_personas.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.reader_personas(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", rows="4") }}
+                {% if form.reader_personas.errors %}
+                    {% for error in form.reader_personas.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">Target reader personas (comma-separated, e.g., "CTO, Technical Director, Engineering Manager")</p>
+            </div>
+
+            <div class="mb-4">
+                {{ form.reader_pain_points.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.reader_pain_points(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", rows="4") }}
+                {% if form.reader_pain_points.errors %}
+                    {% for error in form.reader_pain_points.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">Common problems, needs, and pain points your readers face</p>
+            </div>
+
+            <div class="mb-4">
                 {{ form.cms_url.label(class="block text-gray-700 font-bold mb-2") }}
                 {{ form.cms_url(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
                 {% if form.cms_url.errors %}
