@@ -10,6 +10,7 @@ class SourceType(Enum):
     RSS_FEED = "RSS Feed"
     KEYWORD_SEARCH = "Keyword Search"
     DATA = "Data"
+    HOUSE_CONTENT = "House Content"
 
     @classmethod
     def choices(cls):
