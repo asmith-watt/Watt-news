@@ -130,6 +130,7 @@ def new_news_source(pub_id):
             name=form.name.data,
             source_type=form.source_type.data,
             url=form.url.data,
+            keywords=form.keywords.data,
             is_active=form.is_active.data
         )
         db.session.add(source)
@@ -157,6 +158,7 @@ def edit_news_source(pub_id, id):
         source.name = form.name.data
         source.source_type = form.source_type.data
         source.url = form.url.data
+        source.keywords = form.keywords.data
         source.is_active = form.is_active.data
         db.session.commit()
         flash('News source updated successfully!', 'success')

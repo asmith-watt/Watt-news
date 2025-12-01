@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField
+from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField, SelectField
 from wtforms.validators import DataRequired, Optional, Email, EqualTo, ValidationError
-from app.models import User
+from app.models import User, SourceType
 
 
 class PublicationForm(FlaskForm):
@@ -19,8 +19,9 @@ class PublicationForm(FlaskForm):
 
 class NewsSourceForm(FlaskForm):
     name = StringField('Source Name', validators=[DataRequired()])
-    source_type = StringField('Source Type', validators=[Optional()])
+    source_type = SelectField('Source Type', choices=SourceType.choices(), validators=[Optional()])
     url = StringField('URL', validators=[Optional()])
+    keywords = TextAreaField('Keywords', validators=[Optional()])
     is_active = BooleanField('Active')
     submit = SubmitField('Save')
 

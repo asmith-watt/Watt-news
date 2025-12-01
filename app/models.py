@@ -1,7 +1,23 @@
 from datetime import datetime
+from enum import Enum
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import db, login_manager
+
+
+class SourceType(Enum):
+    NEWS_SITE = "News Site"
+    RSS_FEED = "RSS Feed"
+    KEYWORD_SEARCH = "Keyword Search"
+    DATA = "Data"
+
+    @classmethod
+    def choices(cls):
+        return [(choice.value, choice.value) for choice in cls]
+
+    @classmethod
+    def values(cls):
+        return [choice.value for choice in cls]
 
 
 user_roles = db.Table('user_roles',
@@ -81,6 +97,7 @@ class NewsSource(db.Model):
     name = db.Column(db.String(128), nullable=False)
     source_type = db.Column(db.String(64))
     url = db.Column(db.String(512))
+    keywords = db.Column(db.Text)
     config = db.Column(db.JSON)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
