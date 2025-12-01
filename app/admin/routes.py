@@ -50,6 +50,7 @@ def new_publication():
             industry_description=form.industry_description.data,
             reader_personas=form.reader_personas.data,
             reader_pain_points=form.reader_pain_points.data,
+            access_api_key=form.access_api_key.data,
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
             is_active=form.is_active.data
@@ -74,6 +75,7 @@ def edit_publication(id):
         publication.industry_description = form.industry_description.data
         publication.reader_personas = form.reader_personas.data
         publication.reader_pain_points = form.reader_pain_points.data
+        publication.access_api_key = form.access_api_key.data
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data
@@ -95,13 +97,13 @@ def delete_publication(id):
     return redirect(url_for('admin.publications'))
 
 
-@bp.route('/publications/<int:id>/generate-api-key', methods=['POST'])
+@bp.route('/publications/<int:id>/generate-access-api-key', methods=['POST'])
 @login_required
 @admin_required
-def generate_publication_api_key(id):
+def generate_publication_access_api_key(id):
     publication = Publication.query.get_or_404(id)
     new_api_key = generate_api_key()
-    publication.cms_api_key = new_api_key
+    publication.access_api_key = new_api_key
     db.session.commit()
     return jsonify({'success': True, 'api_key': new_api_key})
 

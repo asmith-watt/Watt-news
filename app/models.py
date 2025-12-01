@@ -62,6 +62,7 @@ class Publication(db.Model):
     industry_description = db.Column(db.Text)
     reader_personas = db.Column(db.Text)
     reader_pain_points = db.Column(db.Text)
+    access_api_key = db.Column(db.String(256))
     cms_url = db.Column(db.String(256))
     cms_api_key = db.Column(db.String(256))
     is_active = db.Column(db.Boolean, default=True)

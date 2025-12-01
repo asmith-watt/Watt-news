@@ -10,7 +10,7 @@ def require_api_key(f):
     """
     Validates API key against:
     1. Global N8N_API_KEY (system-wide access)
-    2. Publication-specific cms_api_key (restricted access)
+    2. Publication-specific access_api_key (restricted access)
 
     If using a publication-specific key, stores the publication in g.authenticated_publication
     for validation in the route handler.
@@ -29,7 +29,7 @@ def require_api_key(f):
 
         # Check publication-specific API keys
         publication = Publication.query.filter_by(
-            cms_api_key=api_key,
+            access_api_key=api_key,
             is_active=True
         ).first()
 

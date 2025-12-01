@@ -10,6 +10,7 @@ class PublicationForm(FlaskForm):
     industry_description = TextAreaField('Industry Description', validators=[Optional()])
     reader_personas = TextAreaField('Target Reader Personas', validators=[Optional()])
     reader_pain_points = TextAreaField('Reader Pain Points & Needs', validators=[Optional()])
+    access_api_key = StringField('Access API Key', validators=[Optional()])
     cms_url = StringField('CMS URL', validators=[Optional()])
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
     is_active = BooleanField('Active')

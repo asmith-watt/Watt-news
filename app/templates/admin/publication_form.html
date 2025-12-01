@@ -67,6 +67,33 @@
             </div>
 
             <div class="mb-4">
+                {{ form.access_api_key.label(class="block text-gray-700 font-bold mb-2") }}
+                <div class="flex gap-2">
+                    <input type="text" id="access_api_key_display"
+                           value="{{ publication.access_api_key if publication and publication.access_api_key else '' }}"
+                           readonly
+                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:border-blue-500 font-mono text-sm">
+                    {{ form.access_api_key(id="access_api_key_hidden", class="hidden") }}
+                    {% if publication %}
+                    <button type="button" onclick="copyAccessApiKey(event)"
+                            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                        Copy
+                    </button>
+                    <button type="button" onclick="generateAccessApiKey(event, {{ publication.id }})"
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Generate New
+                    </button>
+                    {% endif %}
+                </div>
+                {% if form.access_api_key.errors %}
+                    {% for error in form.access_api_key.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">API key for authenticating to this application</p>
+            </div>
+
+            <div class="mb-4">
                 {{ form.cms_url.label(class="block text-gray-700 font-bold mb-2") }}
                 {{ form.cms_url(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
                 {% if form.cms_url.errors %}
@@ -74,33 +101,18 @@
                     <p class="text-red-500 text-sm mt-1">{{ error }}</p>
                     {% endfor %}
                 {% endif %}
+                <p class="text-gray-500 text-sm mt-1">URL of downstream CMS to push content to</p>
             </div>
 
             <div class="mb-4">
                 {{ form.cms_api_key.label(class="block text-gray-700 font-bold mb-2") }}
-                <div class="flex gap-2">
-                    <input type="text" id="cms_api_key_display"
-                           value="{{ publication.cms_api_key if publication and publication.cms_api_key else '' }}"
-                           readonly
-                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:border-blue-500 font-mono text-sm">
-                    {{ form.cms_api_key(id="cms_api_key_hidden", class="hidden") }}
-                    {% if publication %}
-                    <button type="button" onclick="copyApiKey(event)"
-                            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
-                        Copy
-                    </button>
-                    <button type="button" onclick="generateApiKey(event, {{ publication.id }})"
-                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                        Generate New
-                    </button>
-                    {% endif %}
-                </div>
+                {{ form.cms_api_key(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm") }}
                 {% if form.cms_api_key.errors %}
                     {% for error in form.cms_api_key.errors %}
                     <p class="text-red-500 text-sm mt-1">{{ error }}</p>
                     {% endfor %}
                 {% endif %}
-                <p class="text-gray-500 text-sm mt-1">API key for CMS integration</p>
+                <p class="text-gray-500 text-sm mt-1">API key for authenticating to downstream CMS</p>
             </div>
 
             <div class="mb-6">
@@ -122,8 +134,8 @@
 </div>
 
 <script>
-function copyApiKey(event) {
-    const apiKeyInput = document.getElementById('cms_api_key_display');
+function copyAccessApiKey(event) {
+    const apiKeyInput = document.getElementById('access_api_key_display');
     const value = apiKeyInput.value;
 
     if (!value) {
@@ -148,12 +160,12 @@ function copyApiKey(event) {
     });
 }
 
-function generateApiKey(event, publicationId) {
-    if (!confirm('Are you sure you want to generate a new API key? This will invalidate the old key.')) {
+function generateAccessApiKey(event, publicationId) {
+    if (!confirm('Are you sure you want to generate a new access API key? This will invalidate the old key.')) {
         return;
     }
 
-    fetch(`/admin/publications/${publicationId}/generate-api-key`, {
+    fetch(`/admin/publications/${publicationId}/generate-access-api-key`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -162,8 +174,8 @@ function generateApiKey(event, publicationId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            document.getElementById('cms_api_key_display').value = data.api_key;
-            document.getElementById('cms_api_key_hidden').value = data.api_key;
+            document.getElementById('access_api_key_display').value = data.api_key;
+            document.getElementById('access_api_key_hidden').value = data.api_key;
 
             const btn = event.target;
             const originalText = btn.textContent;
@@ -173,7 +185,7 @@ function generateApiKey(event, publicationId) {
                 btn.textContent = originalText;
             }, 2000);
 
-            alert('New API key generated and saved successfully!');
+            alert('New access API key generated and saved successfully!');
         } else {
             alert('Failed to generate API key');
         }
