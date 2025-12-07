@@ -220,6 +220,7 @@ def get_news_sources(publication_id):
                 'name': source.name,
                 'type': source.source_type,
                 'url': source.url,
+                'keywords': source.keywords,
                 'config': source.config
             }
             for source in sources
