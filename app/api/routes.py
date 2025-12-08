@@ -73,58 +73,132 @@ def validate_publication_access(publication_id):
 @bp.route('/news', methods=['POST'])
 @require_api_key
 def create_news():
+    """
+    Create news content from the new JSON format.
+
+    Expected format:
+    [
+      {
+        "publication_id": 1,
+        "output": {
+          "title": "...",
+          "summary": "...",
+          "body": "...",
+          "keywords": ["keyword1", "keyword2"],
+          "references": [
+            {
+              "title": "...",
+              "source_name": "...",
+              "published_date": "YYYY-MM-DD",
+              "url": "..."
+            }
+          ]
+        }
+      }
+    ]
+    """
     data = request.get_json()
 
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    required_fields = ['title', 'publication_id']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'error': f'Missing required field: {field}'}), 400
+    # Handle array format
+    if not isinstance(data, list):
+        return jsonify({'error': 'Expected a list of news items'}), 400
 
-    # Convert publication_id to integer if it's a string
+    created = []
+    errors = []
+
+    for idx, item in enumerate(data):
+        try:
+            # Check for publication_id at item level
+            if 'publication_id' not in item:
+                errors.append({'index': idx, 'error': 'Missing required field: publication_id'})
+                continue
+
+            # Convert publication_id to integer if it's a string
+            try:
+                publication_id = int(item['publication_id'])
+            except (ValueError, TypeError):
+                errors.append({'index': idx, 'error': 'publication_id must be a valid integer'})
+                continue
+
+            # Validate API key has access to this publication
+            is_valid, _ = validate_publication_access(publication_id)
+            if not is_valid:
+                errors.append({'index': idx, 'error': 'API key does not have access to this publication'})
+                continue
+
+            publication = Publication.query.get(publication_id)
+            if not publication:
+                errors.append({'index': idx, 'error': 'Publication not found'})
+                continue
+
+            # Extract output object
+            output = item.get('output', {})
+            if not output.get('title'):
+                errors.append({'index': idx, 'error': 'Missing required field: output.title'})
+                continue
+
+            # Concatenate keywords as comma-separated string
+            keywords_list = output.get('keywords', [])
+            keywords_str = ', '.join(keywords_list) if keywords_list else None
+
+            # Concatenate references into source_url and source_name
+            references = output.get('references', [])
+            source_entries = []
+            source_names = []
+            published_date = None
+
+            for ref in references:
+                url = ref.get('url')
+                ref_date = ref.get('published_date')
+                if url:
+                    if ref_date:
+                        source_entries.append(f"{url} ({ref_date})")
+                    else:
+                        source_entries.append(url)
+                if ref.get('source_name'):
+                    source_names.append(ref['source_name'])
+                # Use the first published_date found for the record's published_date
+                if not published_date and ref_date:
+                    try:
+                        published_date = datetime.fromisoformat(ref_date)
+                    except ValueError:
+                        pass
+
+            source_url_str = ' | '.join(source_entries) if source_entries else None
+            source_name_str = ', '.join(set(source_names)) if source_names else None
+
+            content = NewsContent(
+                publication_id=publication_id,
+                title=output['title'],
+                content=output.get('body'),
+                summary=output.get('summary'),
+                source_url=source_url_str,
+                source_name=source_name_str,
+                keywords=keywords_str,
+                published_date=published_date,
+                status='staged'
+            )
+
+            db.session.add(content)
+            created.append({'index': idx, 'title': output['title']})
+
+        except Exception as e:
+            errors.append({'index': idx, 'error': str(e)})
+
     try:
-        publication_id = int(data['publication_id'])
-    except (ValueError, TypeError):
-        return jsonify({'error': 'publication_id must be a valid integer'}), 400
-
-    # Validate API key has access to this publication
-    is_valid, error_response = validate_publication_access(publication_id)
-    if not is_valid:
-        return error_response
-
-    publication = Publication.query.get(publication_id)
-    if not publication:
-        return jsonify({'error': 'Publication not found'}), 404
-
-    try:
-        content = NewsContent(
-            publication_id=publication_id,
-            title=data['title'],
-            content=data.get('content'),
-            summary=data.get('summary'),
-            author=data.get('author'),
-            source_url=data.get('source_url'),
-            source_name=data.get('source_name'),
-            image_url=data.get('image_url'),
-            published_date=datetime.fromisoformat(data['published_date']) if data.get('published_date') else None,
-            status=data.get('status', 'staged'),
-            extra_data=data.get('extra_data')
-        )
-
-        db.session.add(content)
         db.session.commit()
-
         return jsonify({
             'success': True,
-            'id': content.id,
-            'message': 'News content created successfully'
+            'created': len(created),
+            'created_items': created,
+            'errors': errors
         }), 201
-
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to create news content: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to commit: {str(e)}'}), 500
 
 
 @bp.route('/news/bulk', methods=['POST'])
