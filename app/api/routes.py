@@ -79,26 +79,30 @@ def create_news():
     Expected format:
     {
       "publication_id": 1,
-      "output": {
-        "title": "...",
-        "summary": "...",
-        "body": "...",
-        "keywords": ["keyword1", "keyword2"],
-        "references": [
-          {
-            "title": "...",
-            "source_name": "...",
-            "published_date": "YYYY-MM-DD",
-            "url": "..."
-          }
-        ]
-      }
+      "title": "...",
+      "summary": "...",
+      "body": "...",
+      "keywords": ["keyword1", "keyword2"],
+      "references": [
+        {
+          "title": "...",
+          "source_name": "...",
+          "published_date": "YYYY-MM-DD",
+          "url": "..."
+        }
+      ]
     }
     """
     data = request.get_json()
 
     if not data:
         return jsonify({'error': 'No data provided'}), 400
+
+    # Handle array format - extract first item
+    if isinstance(data, list):
+        if len(data) == 0:
+            return jsonify({'error': 'Empty list provided'}), 400
+        data = data[0]
 
     # Check for publication_id
     if 'publication_id' not in data:
@@ -119,18 +123,17 @@ def create_news():
     if not publication:
         return jsonify({'error': 'Publication not found'}), 404
 
-    # Extract output object
-    output = data.get('output', {})
-    if not output.get('title'):
-        return jsonify({'error': 'Missing required field: output.title'}), 400
+    # Check for title
+    if not data.get('title'):
+        return jsonify({'error': 'Missing required field: title'}), 400
 
     try:
         # Concatenate keywords as comma-separated string
-        keywords_list = output.get('keywords', [])
+        keywords_list = data.get('keywords', [])
         keywords_str = ', '.join(keywords_list) if keywords_list else None
 
         # Concatenate references into source_url and source_name
-        references = output.get('references', [])
+        references = data.get('references', [])
         source_entries = []
         source_names = []
         published_date = None
@@ -157,14 +160,14 @@ def create_news():
 
         content = NewsContent(
             publication_id=publication_id,
-            title=output['title'],
-            content=output.get('body'),
-            summary=output.get('summary'),
+            title=data['title'],
+            content=data.get('body'),
+            summary=data.get('summary'),
             source_url=source_url_str,
             source_name=source_name_str,
             keywords=keywords_str,
             published_date=published_date,
-            status='staged'
+            status=data.get('status', 'staged')
         )
 
         db.session.add(content)
