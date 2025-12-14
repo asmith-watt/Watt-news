@@ -11,6 +11,7 @@ class SourceType(Enum):
     KEYWORD_SEARCH = "Keyword Search"
     DATA = "Data"
     HOUSE_CONTENT = "House Content"
+    COMPETITOR = "Competitor"
 
     @classmethod
     def choices(cls):
