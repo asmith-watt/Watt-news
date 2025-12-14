@@ -35,6 +35,11 @@
                        class="text-blue-600 hover:underline">Edit</a>
                     <a href="{{ url_for('admin.news_sources', pub_id=pub.id) }}"
                        class="text-blue-600 hover:underline">Sources</a>
+                    <form method="POST" action="{{ url_for('admin.trigger_content_workflow', id=pub.id) }}"
+                          class="inline"
+                          onsubmit="return confirm('Trigger content generation workflow for {{ pub.name }}?');">
+                        <button type="submit" class="text-green-600 hover:underline">Generate Content</button>
+                    </form>
                     <form method="POST" action="{{ url_for('admin.delete_publication', id=pub.id) }}"
                           class="inline"
                           onsubmit="return confirm('Are you sure you want to delete this publication?');">

@@ -18,10 +18,26 @@ def index():
 def dashboard():
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'staged')
+    publication_id = request.args.get('publication_id', type=int)
+
+    # Get available publications for the user
+    if current_user.has_role('admin'):
+        publications = Publication.query.filter_by(is_active=True).order_by(Publication.id).all()
+    else:
+        publications = [p for p in current_user.publications if p.is_active]
+
+    # Default to first publication if none selected
+    if not publication_id and publications:
+        publication_id = publications[0].id
+
+    current_publication = Publication.query.get(publication_id) if publication_id else None
 
     query = NewsContent.query
 
-    if not current_user.has_role('admin') and current_user.publications:
+    # Filter by selected publication
+    if publication_id:
+        query = query.filter_by(publication_id=publication_id)
+    elif not current_user.has_role('admin') and current_user.publications:
         pub_ids = current_user.get_publication_ids()
         query = query.filter(NewsContent.publication_id.in_(pub_ids))
 
@@ -32,7 +48,8 @@ def dashboard():
         page=page, per_page=current_app.config['ITEMS_PER_PAGE'], error_out=False
     )
 
-    return render_template('main/dashboard.html', title='Dashboard', content=content, status=status)
+    return render_template('main/dashboard.html', title='Dashboard', content=content, status=status,
+                           publications=publications, current_publication=current_publication)
 
 
 @bp.route('/content/<int:id>')
@@ -114,3 +131,34 @@ def update_status(id):
     db.session.commit()
 
     return jsonify({'success': True, 'status': content.status})
+
+
+@bp.route('/publication/<int:id>/trigger-content-workflow', methods=['POST'])
+@login_required
+def trigger_content_workflow(id):
+    publication = Publication.query.get_or_404(id)
+
+    # Check access
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        flash('Access denied', 'error')
+        return redirect(url_for('main.dashboard'))
+
+    workflow_url = current_app.config.get('N8N_CONTENT_WORKFLOW_URL')
+    if not workflow_url:
+        flash('Content workflow URL is not configured. Set N8N_CONTENT_WORKFLOW_URL environment variable.', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    try:
+        response = requests.get(
+            workflow_url,
+            params={'publication_id': publication.id},
+            timeout=30
+        )
+        response.raise_for_status()
+        flash(f'Content generation workflow triggered for {publication.name}!', 'success')
+    except requests.exceptions.Timeout:
+        flash('Workflow triggered but response timed out. The workflow may still be running.', 'warning')
+    except requests.exceptions.RequestException as e:
+        flash(f'Failed to trigger workflow: {str(e)}', 'error')
+
+    return redirect(url_for('main.dashboard', publication_id=id))

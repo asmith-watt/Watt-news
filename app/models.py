@@ -114,6 +114,7 @@ class NewsContent(db.Model):
     title = db.Column(db.String(512), nullable=False)
     content = db.Column(db.Text)
     summary = db.Column(db.Text)
+    notes = db.Column(db.Text)
     author = db.Column(db.String(256))
     source_url = db.Column(db.Text)
     source_name = db.Column(db.String(128))

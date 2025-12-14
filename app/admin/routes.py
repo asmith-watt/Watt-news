@@ -1,7 +1,8 @@
-from flask import render_template, redirect, url_for, flash, request, jsonify
+from flask import render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
 import secrets
+import requests
 from app import db
 from app.models import Publication, NewsSource, User, Role
 from app.admin import bp
@@ -288,3 +289,30 @@ def delete_user(id):
     db.session.commit()
     flash('User deleted successfully!', 'success')
     return redirect(url_for('admin.users'))
+
+
+@bp.route('/publications/<int:id>/trigger-content-workflow', methods=['POST'])
+@login_required
+@admin_required
+def trigger_content_workflow(id):
+    publication = Publication.query.get_or_404(id)
+
+    workflow_url = current_app.config.get('N8N_CONTENT_WORKFLOW_URL')
+    if not workflow_url:
+        flash('Content workflow URL is not configured. Set N8N_CONTENT_WORKFLOW_URL environment variable.', 'error')
+        return redirect(url_for('admin.publications'))
+
+    try:
+        response = requests.get(
+            workflow_url,
+            json={'publication_id': publication.id},
+            timeout=30
+        )
+        response.raise_for_status()
+        flash(f'Content generation workflow triggered for {publication.name}!', 'success')
+    except requests.exceptions.Timeout:
+        flash('Workflow triggered but response timed out. The workflow may still be running.', 'warning')
+    except requests.exceptions.RequestException as e:
+        flash(f'Failed to trigger workflow: {str(e)}', 'error')
+
+    return redirect(url_for('admin.publications'))

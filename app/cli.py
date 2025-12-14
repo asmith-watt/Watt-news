@@ -65,3 +65,17 @@ def register_commands(app):
 
         db.session.commit()
         click.echo('Database initialized with roles!')
+
+    @app.cli.command()
+    @click.argument('username')
+    @click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='New password')
+    def reset_password(username, password):
+        """Reset a user's password."""
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            click.echo(f'User "{username}" not found!')
+            return
+
+        user.set_password(password)
+        db.session.commit()
+        click.echo(f'Password reset successfully for user "{username}"!')

@@ -22,5 +22,8 @@ class Config:
     CMS_API_URL = os.environ.get('CMS_API_URL')
     CMS_API_KEY = os.environ.get('CMS_API_KEY')
 
+    # n8n Workflow Triggers
+    N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
+
     # Pagination
     ITEMS_PER_PAGE = 20
