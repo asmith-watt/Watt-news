@@ -303,16 +303,18 @@ def trigger_content_workflow(id):
         return redirect(url_for('admin.publications'))
 
     try:
-        response = requests.get(
+        # Fire-and-forget: use a very short timeout just to send the request
+        requests.get(
             workflow_url,
-            json={'publication_id': publication.id},
-            timeout=30
+            params={'publication_id': publication.id},
+            timeout=0.5
         )
-        response.raise_for_status()
-        flash(f'Content generation workflow triggered for {publication.name}!', 'success')
     except requests.exceptions.Timeout:
-        flash('Workflow triggered but response timed out. The workflow may still be running.', 'warning')
+        # Expected - we're not waiting for a response
+        pass
     except requests.exceptions.RequestException as e:
         flash(f'Failed to trigger workflow: {str(e)}', 'error')
+        return redirect(url_for('admin.publications'))
 
+    flash(f'Content generation workflow triggered for {publication.name}!', 'success')
     return redirect(url_for('admin.publications'))
