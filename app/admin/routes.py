@@ -47,7 +47,7 @@ def new_publication():
     if form.validate_on_submit():
         publication = Publication(
             name=form.name.data,
-            slug=form.slug.data,
+            publication_domain=form.publication_domain.data,
             industry_description=form.industry_description.data,
             reader_personas=form.reader_personas.data,
             reader_pain_points=form.reader_pain_points.data,
@@ -72,7 +72,7 @@ def edit_publication(id):
 
     if form.validate_on_submit():
         publication.name = form.name.data
-        publication.slug = form.slug.data
+        publication.publication_domain = form.publication_domain.data
         publication.industry_description = form.industry_description.data
         publication.reader_personas = form.reader_personas.data
         publication.reader_pain_points = form.reader_pain_points.data

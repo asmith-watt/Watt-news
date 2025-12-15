@@ -76,7 +76,7 @@ class Role(db.Model):
 class Publication(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), unique=True, nullable=False)
-    slug = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    publication_domain = db.Column(db.String(128), unique=True, nullable=False, index=True)
     industry_description = db.Column(db.Text)
     reader_personas = db.Column(db.Text)
     reader_pain_points = db.Column(db.Text)

@@ -81,18 +81,30 @@ def push_to_cms(id):
 
     try:
         payload = {
-            'title': content.title,
-            'content': content.content,
-            'summary': content.summary,
-            'author': content.author,
-            'source_url': content.source_url,
-            'image_url': content.image_url,
-            'published_date': content.published_date.isoformat() if content.published_date else None
+            'command': {
+                'input': [
+                    {
+                        'form': 'POST',
+                        'props': {
+                            'title': content.title,
+                            'type': 'ARTICLE',
+                            'body': content.content
+                        }
+                    }
+                ]
+            },
+            'view': 'main'
         }
 
+        # Add Bearer prefix if not already present
+        api_key = publication.cms_api_key
+        if not api_key.lower().startswith('bearer '):
+            api_key = f'Bearer {api_key}'
+
         headers = {
-            'Authorization': f'Bearer {publication.cms_api_key}',
-            'Content-Type': 'application/json'
+            'Authorization': api_key,
+            'Content-Type': 'application/json',
+            'x-namespace': 'watt/default'
         }
 
         response = requests.post(publication.cms_url, json=payload, headers=headers, timeout=30)

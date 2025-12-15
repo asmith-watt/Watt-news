@@ -23,14 +23,14 @@
             </div>
 
             <div class="mb-4">
-                {{ form.slug.label(class="block text-gray-700 font-bold mb-2") }}
-                {{ form.slug(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
-                {% if form.slug.errors %}
-                    {% for error in form.slug.errors %}
+                {{ form.publication_domain.label(class="block text-gray-700 font-bold mb-2") }}
+                {{ form.publication_domain(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                {% if form.publication_domain.errors %}
+                    {% for error in form.publication_domain.errors %}
                     <p class="text-red-500 text-sm mt-1">{{ error }}</p>
                     {% endfor %}
                 {% endif %}
-                <p class="text-gray-500 text-sm mt-1">URL-friendly identifier (e.g., my-publication)</p>
+                <p class="text-gray-500 text-sm mt-1">The domain for this publication (e.g., example.com)</p>
             </div>
 
             <div class="mb-4">

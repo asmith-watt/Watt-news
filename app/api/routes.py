@@ -302,7 +302,7 @@ def get_publications():
             {
                 'id': pub.id,
                 'name': pub.name,
-                'slug': pub.slug,
+                'publication_domain': pub.publication_domain,
                 'industry': pub.industry_description,
                 'reader_personas': pub.reader_personas,
                 'reader_pain_points': pub.reader_pain_points
@@ -327,7 +327,7 @@ def get_publication(publication_id):
     return jsonify({
         'id': publication.id,
         'name': publication.name,
-        'slug': publication.slug,
+        'publication_domain': publication.publication_domain,
         'industry_description': publication.industry_description,
         'reader_personas': publication.reader_personas,
         'reader_pain_points': publication.reader_pain_points,

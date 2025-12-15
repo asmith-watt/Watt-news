@@ -6,7 +6,7 @@ from app.models import User, SourceType
 
 class PublicationForm(FlaskForm):
     name = StringField('Publication Name', validators=[DataRequired()])
-    slug = StringField('Slug', validators=[DataRequired()])
+    publication_domain = StringField('Publication Domain', validators=[DataRequired()])
     industry_description = TextAreaField('Industry Description', validators=[Optional()])
     reader_personas = TextAreaField('Target Reader Personas', validators=[Optional()])
     reader_pain_points = TextAreaField('Reader Pain Points & Needs', validators=[Optional()])
