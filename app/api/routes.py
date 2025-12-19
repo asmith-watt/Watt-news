@@ -161,6 +161,8 @@ def create_news():
         content = NewsContent(
             publication_id=publication_id,
             title=data['title'],
+            deck=data.get('deck'),
+            teaser=data.get('teaser'),
             content=data.get('body'),
             summary=data.get('summary'),
             notes=data.get('notes'),
@@ -225,6 +227,8 @@ def create_news_bulk():
             content = NewsContent(
                 publication_id=publication_id,
                 title=item['title'],
+                deck=item.get('deck'),
+                teaser=item.get('teaser'),
                 content=item.get('content'),
                 summary=item.get('summary'),
                 notes=item.get('notes'),

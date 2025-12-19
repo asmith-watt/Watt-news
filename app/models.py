@@ -113,6 +113,8 @@ class NewsContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
     title = db.Column(db.String(512), nullable=False)
+    deck = db.Column(db.Text)
+    teaser = db.Column(db.Text)
     content = db.Column(db.Text)
     summary = db.Column(db.Text)
     notes = db.Column(db.Text)
