@@ -143,6 +143,23 @@ class NewsContent(db.Model):
         return f'<NewsContent {self.title[:50]}>'
 
 
+class WorkflowRun(db.Model):
+    id = db.Column(db.String(36), primary_key=True)  # UUID
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
+    triggered_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    workflow_type = db.Column(db.String(64), default='content_generation')
+    status = db.Column(db.String(32), default='pending', index=True)  # pending, running, completed, failed
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    completed_at = db.Column(db.DateTime)
+
+    publication = db.relationship('Publication', backref='workflow_runs')
+    triggered_by = db.relationship('User', backref='triggered_workflows')
+
+    def __repr__(self):
+        return f'<WorkflowRun {self.id} ({self.status})>'
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))

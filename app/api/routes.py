@@ -2,7 +2,7 @@ from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime
 from app import db
-from app.models import NewsContent, NewsSource, Publication
+from app.models import NewsContent, NewsSource, Publication, WorkflowRun
 from app.api import bp
 
 
@@ -340,4 +340,44 @@ def get_publication(publication_id):
         'cms_url': publication.cms_url,
         'is_active': publication.is_active,
         'created_at': publication.created_at.isoformat() if publication.created_at else None
+    })
+
+
+@bp.route('/workflow/<workflow_id>/status', methods=['GET'])
+def get_workflow_status(workflow_id):
+    """Get the status of a workflow run. No auth required as workflow_id is unique."""
+    workflow = WorkflowRun.query.get(workflow_id)
+    if not workflow:
+        return jsonify({'error': 'Workflow not found'}), 404
+
+    return jsonify({
+        'id': workflow.id,
+        'status': workflow.status,
+        'message': workflow.message,
+        'publication_id': workflow.publication_id,
+        'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
+        'completed_at': workflow.completed_at.isoformat() if workflow.completed_at else None
+    })
+
+
+@bp.route('/workflow/<workflow_id>/complete', methods=['POST'])
+@require_api_key
+def complete_workflow(workflow_id):
+    """Called by n8n when a workflow completes."""
+    workflow = WorkflowRun.query.get(workflow_id)
+    if not workflow:
+        return jsonify({'error': 'Workflow not found'}), 404
+
+    data = request.get_json() or {}
+
+    workflow.status = data.get('status', 'completed')
+    workflow.message = data.get('message')
+    workflow.completed_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'id': workflow.id,
+        'status': workflow.status
     })

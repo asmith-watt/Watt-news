@@ -1,8 +1,9 @@
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from datetime import datetime
+import uuid
 from app import db
-from app.models import NewsContent, Publication
+from app.models import NewsContent, Publication, WorkflowRun
 from app.main import bp
 import requests
 
@@ -160,19 +161,40 @@ def trigger_content_workflow(id):
         flash('Content workflow URL is not configured. Set N8N_CONTENT_WORKFLOW_URL environment variable.', 'error')
         return redirect(url_for('main.dashboard', publication_id=id))
 
+    # Create workflow run record
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=publication.id,
+        triggered_by_id=current_user.id,
+        workflow_type='content_generation',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
     try:
         # Fire-and-forget: use a very short timeout just to send the request
         requests.get(
             workflow_url,
-            params={'publication_id': publication.id},
+            params={
+                'publication_id': publication.id,
+                'workflow_id': workflow_id
+            },
             timeout=0.5
         )
     except requests.exceptions.Timeout:
         # Expected - we're not waiting for a response
         pass
     except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
         flash(f'Failed to trigger workflow: {str(e)}', 'error')
         return redirect(url_for('main.dashboard', publication_id=id))
 
-    flash(f'Content generation workflow triggered for {publication.name}!', 'success')
-    return redirect(url_for('main.dashboard', publication_id=id))
+    # Update status to running
+    workflow_run.status = 'running'
+    db.session.commit()
+
+    return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id))

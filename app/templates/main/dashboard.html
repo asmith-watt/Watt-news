@@ -14,6 +14,19 @@
     {% endif %}
 </div>
 
+<!-- Workflow Status Banner -->
+<div id="workflow-status" class="hidden mb-6 p-4 rounded-lg flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+        <div id="workflow-spinner" class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+        <span id="workflow-message" class="font-medium"></span>
+    </div>
+    <button onclick="dismissWorkflowStatus()" class="text-white hover:text-gray-200">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+    </button>
+</div>
+
 <div class="mb-6 flex justify-between items-center">
     <div class="flex items-center space-x-4">
         <label for="publication-select" class="text-sm font-medium text-gray-700">Publication:</label>
@@ -117,4 +130,90 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+let workflowPollInterval = null;
+let currentWorkflowId = null;
+
+function getUrlParam(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+}
+
+function showWorkflowStatus(status, message, isComplete = false) {
+    const banner = document.getElementById('workflow-status');
+    const messageEl = document.getElementById('workflow-message');
+    const spinner = document.getElementById('workflow-spinner');
+
+    banner.classList.remove('hidden', 'bg-blue-600', 'bg-green-600', 'bg-red-600');
+    messageEl.textContent = message;
+
+    if (status === 'running' || status === 'pending') {
+        banner.classList.add('bg-blue-600', 'text-white');
+        spinner.classList.remove('hidden');
+    } else if (status === 'completed') {
+        banner.classList.add('bg-green-600', 'text-white');
+        spinner.classList.add('hidden');
+    } else if (status === 'failed') {
+        banner.classList.add('bg-red-600', 'text-white');
+        spinner.classList.add('hidden');
+    }
+}
+
+function dismissWorkflowStatus() {
+    const banner = document.getElementById('workflow-status');
+    banner.classList.add('hidden');
+
+    if (workflowPollInterval) {
+        clearInterval(workflowPollInterval);
+        workflowPollInterval = null;
+    }
+
+    // Remove workflow_id from URL
+    const url = new URL(window.location);
+    url.searchParams.delete('workflow_id');
+    window.history.replaceState({}, '', url);
+}
+
+function pollWorkflowStatus(workflowId) {
+    fetch(`/api/workflow/${workflowId}/status`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showWorkflowStatus('failed', 'Workflow not found');
+                clearInterval(workflowPollInterval);
+                return;
+            }
+
+            if (data.status === 'running' || data.status === 'pending') {
+                showWorkflowStatus(data.status, 'Content generation workflow is running...');
+            } else if (data.status === 'completed') {
+                showWorkflowStatus('completed', data.message || 'Workflow completed successfully!');
+                clearInterval(workflowPollInterval);
+                // Refresh the page after a short delay to show new content
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else if (data.status === 'failed') {
+                showWorkflowStatus('failed', data.message || 'Workflow failed');
+                clearInterval(workflowPollInterval);
+            }
+        })
+        .catch(error => {
+            console.error('Error polling workflow status:', error);
+        });
+}
+
+// Check for workflow_id in URL on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const workflowId = getUrlParam('workflow_id');
+    if (workflowId) {
+        currentWorkflowId = workflowId;
+        showWorkflowStatus('running', 'Content generation workflow is running...');
+        // Poll every 3 seconds
+        pollWorkflowStatus(workflowId);
+        workflowPollInterval = setInterval(() => pollWorkflowStatus(workflowId), 3000);
+    }
+});
+</script>
 {% endblock %}
