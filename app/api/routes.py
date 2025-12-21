@@ -280,6 +280,8 @@ def get_news_sources(publication_id):
         'sources': [
             {
                 'id': source.id,
+                'publication_id': publication.id,
+                'industry_description': publication.industry_description,
                 'name': source.name,
                 'type': source.source_type,
                 'url': source.url,
