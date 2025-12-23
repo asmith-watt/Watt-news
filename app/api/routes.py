@@ -168,6 +168,7 @@ def create_news():
             notes=data.get('notes'),
             source_url=source_url_str,
             source_name=source_name_str,
+            image_url=data.get('image_url'),
             keywords=keywords_str,
             published_date=published_date,
             status=data.get('status', 'staged')
