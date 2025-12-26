@@ -123,6 +123,7 @@ class NewsContent(db.Model):
     source_name = db.Column(db.String(128))
     keywords = db.Column(db.Text)
     image_url = db.Column(db.String(512))
+    image_thumbnail = db.Column(db.String(512))
     published_date = db.Column(db.DateTime)
 
     status = db.Column(db.String(32), default='staged', index=True)

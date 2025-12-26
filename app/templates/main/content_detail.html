@@ -50,8 +50,8 @@
         </div>
 
         <div class="px-6 py-4">
-            {% if content.image_url %}
-            <img src="{{ content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded mb-4">
+            {% if content.image_thumbnail or content.image_url %}
+            <img src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded mb-4">
             {% endif %}
 
             {% if content.deck %}

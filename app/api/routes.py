@@ -169,6 +169,7 @@ def create_news():
             source_url=source_url_str,
             source_name=source_name_str,
             image_url=data.get('image_url'),
+            image_thumbnail=data.get('image_thumbnail'),
             keywords=keywords_str,
             published_date=published_date,
             status=data.get('status', 'staged')
@@ -237,6 +238,7 @@ def create_news_bulk():
                 source_url=item.get('source_url'),
                 source_name=item.get('source_name'),
                 image_url=item.get('image_url'),
+                image_thumbnail=item.get('image_thumbnail'),
                 published_date=datetime.fromisoformat(item['published_date']) if item.get('published_date') else None,
                 status=item.get('status', 'staged'),
                 extra_data=item.get('extra_data')
