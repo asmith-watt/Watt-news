@@ -127,6 +127,7 @@ class NewsContent(db.Model):
     published_date = db.Column(db.DateTime)
 
     status = db.Column(db.String(32), default='staged', index=True)
+    rejection_reason = db.Column(db.Text)
 
     extra_data = db.Column(db.JSON)
 

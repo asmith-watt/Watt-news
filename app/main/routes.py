@@ -141,6 +141,15 @@ def update_status(id):
         return jsonify({'error': 'Invalid status'}), 400
 
     content.status = new_status
+
+    # Handle rejection reason
+    if new_status == 'rejected':
+        rejection_reason = request.json.get('rejection_reason', '').strip()
+        content.rejection_reason = rejection_reason if rejection_reason else None
+    elif new_status != 'rejected':
+        # Clear rejection reason when status changes away from rejected
+        content.rejection_reason = None
+
     db.session.commit()
 
     return jsonify({'success': True, 'status': content.status})
