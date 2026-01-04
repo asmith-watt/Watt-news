@@ -24,6 +24,7 @@ class Config:
 
     # n8n Workflow Triggers
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
+    N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')
 
     # Pagination
     ITEMS_PER_PAGE = 20

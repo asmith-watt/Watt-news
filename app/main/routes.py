@@ -207,3 +207,66 @@ def trigger_content_workflow(id):
     db.session.commit()
 
     return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id))
+
+
+@bp.route('/content/<int:id>/generate-image', methods=['POST'])
+@login_required
+def generate_image(id):
+    """Trigger image generation workflow for a content item."""
+    content = NewsContent.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    workflow_url = current_app.config.get('N8N_IMAGE_WORKFLOW_URL')
+    if not workflow_url:
+        return jsonify({'error': 'Image workflow URL is not configured. Set N8N_IMAGE_WORKFLOW_URL environment variable.'}), 400
+
+    # Create workflow run record
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=content.publication_id,
+        triggered_by_id=current_user.id,
+        workflow_type='image_generation',
+        status='pending',
+        message=f'content_id:{content.id}'  # Store content_id for the callback
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    try:
+        # POST to n8n with article summary
+        payload = {
+            'workflow_id': workflow_id,
+            'content_id': content.id,
+            'title': content.title,
+            'summary': content.summary or content.teaser or content.deck or ''
+        }
+
+        response = requests.post(
+            workflow_url,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=5
+        )
+        response.raise_for_status()
+
+    except requests.exceptions.Timeout:
+        # Timeout is acceptable for async workflows
+        pass
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
+        return jsonify({'error': f'Failed to trigger image workflow: {str(e)}'}), 500
+
+    # Update status to running
+    workflow_run.status = 'running'
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'workflow_id': workflow_id,
+        'message': 'Image generation started'
+    })

@@ -50,9 +50,37 @@
         </div>
 
         <div class="px-6 py-4">
-            {% if content.image_thumbnail or content.image_url %}
-            <img src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded mb-4">
-            {% endif %}
+            <!-- Image Section -->
+            <div id="imageSection" class="mb-4">
+                {% if content.image_thumbnail or content.image_url %}
+                <div class="relative">
+                    <img id="contentImage" src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded">
+                    {% if content.image_url %}
+                    <a href="{{ content.image_url }}" target="_blank" download
+                       class="absolute bottom-2 right-2 px-3 py-1 bg-white bg-opacity-90 text-gray-700 text-sm rounded hover:bg-opacity-100">
+                        Download
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="mt-2">
+                    <button onclick="generateImage()" id="generateImageBtn"
+                            class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        Regenerate Image
+                    </button>
+                </div>
+                {% else %}
+                <div id="noImagePlaceholder" class="bg-gray-100 rounded p-8 text-center">
+                    <p class="text-gray-500 mb-4">No image available</p>
+                    <button onclick="generateImage()" id="generateImageBtn"
+                            class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        Generate Image
+                    </button>
+                </div>
+                {% endif %}
+                <!-- Image generation status -->
+                <div id="imageStatus" class="hidden mt-2 p-3 rounded">
+                </div>
+            </div>
 
             {% if content.deck %}
             <div class="mb-4 p-4 bg-indigo-50 rounded">
@@ -281,6 +309,105 @@ function pushToCMS() {
     .catch(error => {
         alert('Error: ' + error);
     });
+}
+
+// Image Generation
+let imagePollingInterval = null;
+
+function generateImage() {
+    const btn = document.getElementById('generateImageBtn');
+    const statusDiv = document.getElementById('imageStatus');
+
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    // Show status
+    statusDiv.classList.remove('hidden', 'bg-green-100', 'bg-red-100');
+    statusDiv.classList.add('bg-yellow-100');
+    statusDiv.innerHTML = '<span class="text-yellow-800">Starting image generation...</span>';
+
+    fetch('{{ url_for("main.generate_image", id=content.id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            btn.textContent = 'Generating...';
+            statusDiv.innerHTML = '<span class="text-yellow-800">Generating image... This may take a minute.</span>';
+            // Start polling for status
+            startImagePolling(data.workflow_id);
+        } else {
+            resetImageButton();
+            statusDiv.classList.remove('bg-yellow-100');
+            statusDiv.classList.add('bg-red-100');
+            statusDiv.innerHTML = '<span class="text-red-800">Error: ' + data.error + '</span>';
+        }
+    })
+    .catch(error => {
+        resetImageButton();
+        statusDiv.classList.remove('bg-yellow-100');
+        statusDiv.classList.add('bg-red-100');
+        statusDiv.innerHTML = '<span class="text-red-800">Error: ' + error + '</span>';
+    });
+}
+
+function startImagePolling(workflowId) {
+    let pollCount = 0;
+    const maxPolls = 60; // Poll for up to 2 minutes (every 2 seconds)
+
+    imagePollingInterval = setInterval(() => {
+        pollCount++;
+
+        if (pollCount > maxPolls) {
+            clearInterval(imagePollingInterval);
+            resetImageButton();
+            const statusDiv = document.getElementById('imageStatus');
+            statusDiv.classList.remove('bg-yellow-100');
+            statusDiv.classList.add('bg-red-100');
+            statusDiv.innerHTML = '<span class="text-red-800">Image generation timed out. Please try again.</span>';
+            return;
+        }
+
+        fetch('/api/workflow/' + workflowId + '/status')
+        .then(response => response.json())
+        .then(data => {
+            const statusDiv = document.getElementById('imageStatus');
+
+            if (data.status === 'completed') {
+                clearInterval(imagePollingInterval);
+                statusDiv.classList.remove('bg-yellow-100');
+                statusDiv.classList.add('bg-green-100');
+                statusDiv.innerHTML = '<span class="text-green-800">Image generated successfully! Reloading...</span>';
+                // Reload page to show new image
+                setTimeout(() => location.reload(), 1000);
+            } else if (data.status === 'failed') {
+                clearInterval(imagePollingInterval);
+                resetImageButton();
+                statusDiv.classList.remove('bg-yellow-100');
+                statusDiv.classList.add('bg-red-100');
+                statusDiv.innerHTML = '<span class="text-red-800">Image generation failed: ' + (data.message || 'Unknown error') + '</span>';
+            }
+            // If still running/pending, continue polling
+        })
+        .catch(error => {
+            // Don't stop polling on network errors, just log
+            console.error('Polling error:', error);
+        });
+    }, 2000); // Poll every 2 seconds
+}
+
+function resetImageButton() {
+    const btn = document.getElementById('generateImageBtn');
+    btn.disabled = false;
+    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    // Check if we have an image to determine button text
+    const hasImage = document.getElementById('contentImage') !== null;
+    btn.textContent = hasImage ? 'Regenerate Image' : 'Generate Image';
 }
 </script>
 {% endblock %}

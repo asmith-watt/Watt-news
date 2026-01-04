@@ -371,7 +371,8 @@ def complete_workflow(workflow_id):
     if not workflow:
         return jsonify({'error': 'Workflow not found'}), 404
 
-    data = request.get_json() or {}
+    # Use force=True to parse JSON even without Content-Type header (n8n sometimes omits it)
+    data = request.get_json(force=True, silent=True) or {}
 
     workflow.status = data.get('status', 'completed')
     workflow.message = data.get('message')
@@ -383,4 +384,66 @@ def complete_workflow(workflow_id):
         'success': True,
         'id': workflow.id,
         'status': workflow.status
+    })
+
+
+@bp.route('/workflow/<workflow_id>/image-complete', methods=['POST'])
+@require_api_key
+def complete_image_workflow(workflow_id):
+    """Called by n8n when image generation completes. Updates the content with image URLs."""
+    workflow = WorkflowRun.query.get(workflow_id)
+    if not workflow:
+        return jsonify({'error': 'Workflow not found'}), 404
+
+    # Use force=True to parse JSON even without Content-Type header
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Get content_id from the workflow message or from the request
+    content_id = data.get('content_id')
+    if not content_id and workflow.message:
+        # Parse content_id from message (format: "content_id:123")
+        if workflow.message.startswith('content_id:'):
+            try:
+                content_id = int(workflow.message.split(':')[1])
+            except (ValueError, IndexError):
+                pass
+
+    if not content_id:
+        workflow.status = 'failed'
+        workflow.message = 'No content_id provided'
+        workflow.completed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'error': 'No content_id provided'}), 400
+
+    content = NewsContent.query.get(content_id)
+    if not content:
+        workflow.status = 'failed'
+        workflow.message = f'Content {content_id} not found'
+        workflow.completed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'error': 'Content not found'}), 404
+
+    # Update content with image URLs
+    image_thumbnail = data.get('image_thumbnail') or data.get('thumbnail_url')
+    image_url = data.get('image_url') or data.get('download_url')
+
+    if image_thumbnail:
+        content.image_thumbnail = image_thumbnail
+    if image_url:
+        content.image_url = image_url
+
+    # Update workflow status
+    workflow.status = data.get('status', 'completed')
+    workflow.message = data.get('message', f'Image generated for content {content_id}')
+    workflow.completed_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'id': workflow.id,
+        'status': workflow.status,
+        'content_id': content_id,
+        'image_thumbnail': content.image_thumbnail,
+        'image_url': content.image_url
     })
