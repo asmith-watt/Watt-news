@@ -54,7 +54,7 @@
             <div id="imageSection" class="mb-4">
                 {% if content.image_thumbnail or content.image_url %}
                 <div class="relative">
-                    <img id="contentImage" src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="w-full max-h-96 object-cover rounded">
+                    <img id="contentImage" src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="max-w-full max-h-96 h-auto rounded">
                     {% if content.image_url %}
                     <a href="{{ content.image_url }}" target="_blank" download
                        class="absolute bottom-2 right-2 px-3 py-1 bg-white bg-opacity-90 text-gray-700 text-sm rounded hover:bg-opacity-100">
