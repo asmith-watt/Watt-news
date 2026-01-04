@@ -190,9 +190,11 @@ function pollWorkflowStatus(workflowId) {
             } else if (data.status === 'completed') {
                 showWorkflowStatus('completed', data.message || 'Workflow completed successfully!');
                 clearInterval(workflowPollInterval);
-                // Refresh the page after a short delay to show new content
+                // Remove workflow_id from URL and refresh to show new content
                 setTimeout(() => {
-                    location.reload();
+                    const url = new URL(window.location);
+                    url.searchParams.delete('workflow_id');
+                    window.location.href = url.toString();
                 }, 2000);
             } else if (data.status === 'failed') {
                 showWorkflowStatus('failed', data.message || 'Workflow failed');
