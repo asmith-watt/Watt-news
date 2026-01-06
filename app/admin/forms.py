@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField, SelectField
-from wtforms.validators import DataRequired, Optional, Email, EqualTo, ValidationError
+from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField, SelectField, IntegerField
+from wtforms.validators import DataRequired, Optional, Email, EqualTo, ValidationError, NumberRange
 from app.models import User, SourceType
 
 
@@ -14,6 +14,52 @@ class PublicationForm(FlaskForm):
     cms_url = StringField('CMS URL', validators=[Optional()])
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
     is_active = BooleanField('Active')
+
+    # Scheduling fields
+    schedule_enabled = BooleanField('Enable Scheduled Content Generation')
+    schedule_frequency = SelectField('Frequency', choices=[
+        ('', '-- Select --'),
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly')
+    ], validators=[Optional()])
+    schedule_time = SelectField('Time (UTC)', choices=[
+        ('', '-- Select --'),
+        ('00:00', '12:00 AM (Midnight)'),
+        ('01:00', '1:00 AM'),
+        ('02:00', '2:00 AM'),
+        ('03:00', '3:00 AM'),
+        ('04:00', '4:00 AM'),
+        ('05:00', '5:00 AM'),
+        ('06:00', '6:00 AM'),
+        ('07:00', '7:00 AM'),
+        ('08:00', '8:00 AM'),
+        ('09:00', '9:00 AM'),
+        ('10:00', '10:00 AM'),
+        ('11:00', '11:00 AM'),
+        ('12:00', '12:00 PM (Noon)'),
+        ('13:00', '1:00 PM'),
+        ('14:00', '2:00 PM'),
+        ('15:00', '3:00 PM'),
+        ('16:00', '4:00 PM'),
+        ('17:00', '5:00 PM'),
+        ('18:00', '6:00 PM'),
+        ('19:00', '7:00 PM'),
+        ('20:00', '8:00 PM'),
+        ('21:00', '9:00 PM'),
+        ('22:00', '10:00 PM'),
+        ('23:00', '11:00 PM'),
+    ], validators=[Optional()])
+    schedule_day_of_week = SelectField('Day of Week', choices=[
+        ('', '-- Select --'),
+        ('0', 'Monday'),
+        ('1', 'Tuesday'),
+        ('2', 'Wednesday'),
+        ('3', 'Thursday'),
+        ('4', 'Friday'),
+        ('5', 'Saturday'),
+        ('6', 'Sunday'),
+    ], validators=[Optional()])
+
     submit = SubmitField('Save')
 
 

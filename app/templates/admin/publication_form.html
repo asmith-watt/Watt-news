@@ -122,6 +122,50 @@
                 </label>
             </div>
 
+            <!-- Scheduling Section -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Content Generation Schedule</h3>
+
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        {{ form.schedule_enabled(class="mr-2", id="schedule_enabled") }}
+                        <span class="text-gray-700 font-bold">{{ form.schedule_enabled.label.text }}</span>
+                    </label>
+                    <p class="text-gray-500 text-sm mt-1">Automatically trigger content generation on a schedule</p>
+                </div>
+
+                <div id="schedule_options" class="{% if not form.schedule_enabled.data %}hidden{% endif %} space-y-4 mt-4 pl-4 border-l-2 border-blue-300">
+                    <div>
+                        {{ form.schedule_frequency.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.schedule_frequency(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", id="schedule_frequency") }}
+                    </div>
+
+                    <div>
+                        {{ form.schedule_time.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.schedule_time(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                        <p class="text-gray-500 text-sm mt-1">All times are in UTC</p>
+                    </div>
+
+                    <div id="day_of_week_container" class="{% if form.schedule_frequency.data != 'weekly' %}hidden{% endif %}">
+                        {{ form.schedule_day_of_week.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.schedule_day_of_week(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                    </div>
+
+                    {% if publication and publication.next_scheduled_run %}
+                    <div class="p-3 bg-blue-50 rounded border border-blue-200">
+                        <p class="text-sm text-blue-800">
+                            <strong>Next scheduled run:</strong> {{ publication.next_scheduled_run.strftime('%Y-%m-%d %H:%M') }} UTC
+                        </p>
+                        {% if publication.last_scheduled_run %}
+                        <p class="text-sm text-blue-800">
+                            <strong>Last run:</strong> {{ publication.last_scheduled_run.strftime('%Y-%m-%d %H:%M') }} UTC
+                        </p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="flex space-x-2">
                 {{ form.submit(class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer") }}
                 <a href="{{ url_for('admin.publications') }}"
@@ -194,5 +238,35 @@ function generateAccessApiKey(event, publicationId) {
         alert('Error generating API key: ' + error);
     });
 }
+
+// Schedule options toggle
+document.addEventListener('DOMContentLoaded', function() {
+    const scheduleEnabled = document.getElementById('schedule_enabled');
+    const scheduleOptions = document.getElementById('schedule_options');
+    const scheduleFrequency = document.getElementById('schedule_frequency');
+    const dayOfWeekContainer = document.getElementById('day_of_week_container');
+
+    // Toggle schedule options visibility
+    if (scheduleEnabled) {
+        scheduleEnabled.addEventListener('change', function() {
+            if (this.checked) {
+                scheduleOptions.classList.remove('hidden');
+            } else {
+                scheduleOptions.classList.add('hidden');
+            }
+        });
+    }
+
+    // Toggle day of week visibility based on frequency
+    if (scheduleFrequency) {
+        scheduleFrequency.addEventListener('change', function() {
+            if (this.value === 'weekly') {
+                dayOfWeekContainer.classList.remove('hidden');
+            } else {
+                dayOfWeekContainer.classList.add('hidden');
+            }
+        });
+    }
+});
 </script>
 {% endblock %}

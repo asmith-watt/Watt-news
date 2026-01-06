@@ -7,6 +7,7 @@ from app import db
 from app.models import Publication, NewsSource, User, Role
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm
+from app.tasks import calculate_next_run
 
 
 def admin_required(f):
@@ -54,8 +55,18 @@ def new_publication():
             access_api_key=form.access_api_key.data,
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
-            is_active=form.is_active.data
+            is_active=form.is_active.data,
+            # Scheduling fields
+            schedule_enabled=form.schedule_enabled.data,
+            schedule_frequency=form.schedule_frequency.data or None,
+            schedule_time=form.schedule_time.data or None,
+            schedule_day_of_week=int(form.schedule_day_of_week.data) if form.schedule_day_of_week.data else None
         )
+
+        # Calculate next scheduled run if scheduling is enabled
+        if publication.schedule_enabled and publication.schedule_frequency and publication.schedule_time:
+            publication.next_scheduled_run = calculate_next_run(publication)
+
         db.session.add(publication)
         db.session.commit()
         flash('Publication created successfully!', 'success')
@@ -70,6 +81,10 @@ def edit_publication(id):
     publication = Publication.query.get_or_404(id)
     form = PublicationForm(obj=publication)
 
+    # Pre-populate schedule_day_of_week as string for SelectField
+    if request.method == 'GET' and publication.schedule_day_of_week is not None:
+        form.schedule_day_of_week.data = str(publication.schedule_day_of_week)
+
     if form.validate_on_submit():
         publication.name = form.name.data
         publication.publication_domain = form.publication_domain.data
@@ -80,6 +95,19 @@ def edit_publication(id):
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data
+
+        # Scheduling fields
+        publication.schedule_enabled = form.schedule_enabled.data
+        publication.schedule_frequency = form.schedule_frequency.data or None
+        publication.schedule_time = form.schedule_time.data or None
+        publication.schedule_day_of_week = int(form.schedule_day_of_week.data) if form.schedule_day_of_week.data else None
+
+        # Calculate next scheduled run if scheduling is enabled
+        if publication.schedule_enabled and publication.schedule_frequency and publication.schedule_time:
+            publication.next_scheduled_run = calculate_next_run(publication)
+        else:
+            publication.next_scheduled_run = None
+
         db.session.commit()
         flash('Publication updated successfully!', 'success')
         return redirect(url_for('admin.publications'))

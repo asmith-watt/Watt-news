@@ -11,3 +11,5 @@ requests==2.31.0
 Werkzeug==3.0.1
 gunicorn==21.2.0
 Markdown==3.5.1
+celery[redis]==5.3.6
+redis==5.0.1

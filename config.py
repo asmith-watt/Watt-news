@@ -26,5 +26,9 @@ class Config:
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')
 
+    # Celery Configuration
+    CELERY_BROKER_URL = os.environ.get('REDIS_URL') or os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'
+    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL') or os.environ.get('CELERY_RESULT_BACKEND') or 'redis://localhost:6379/0'
+
     # Pagination
     ITEMS_PER_PAGE = 20

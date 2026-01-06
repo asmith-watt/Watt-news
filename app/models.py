@@ -86,6 +86,14 @@ class Publication(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Scheduling fields for automated content generation
+    schedule_enabled = db.Column(db.Boolean, default=False)
+    schedule_frequency = db.Column(db.String(32))  # 'daily' or 'weekly'
+    schedule_time = db.Column(db.String(5))  # 'HH:MM' format (UTC)
+    schedule_day_of_week = db.Column(db.Integer)  # 0-6 for weekly (Monday=0)
+    last_scheduled_run = db.Column(db.DateTime)
+    next_scheduled_run = db.Column(db.DateTime, index=True)
+
     news_sources = db.relationship('NewsSource', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     news_content = db.relationship('NewsContent', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
 
