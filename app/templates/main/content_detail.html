@@ -105,7 +105,7 @@
 
             {% if content.content %}
             <div class="prose max-w-none">
-                {{ content.content|safe }}
+                {{ content.content|markdown }}
             </div>
             {% endif %}
 

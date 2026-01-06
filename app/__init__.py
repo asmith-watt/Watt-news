@@ -2,6 +2,8 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
+from markupsafe import Markup
+import markdown
 from config import Config
 
 db = SQLAlchemy()
@@ -32,6 +34,13 @@ def create_app(config_class=Config):
     # Register CLI commands
     from app.cli import register_commands
     register_commands(app)
+
+    # Register custom Jinja filters
+    @app.template_filter('markdown')
+    def markdown_filter(text):
+        if text is None:
+            return ''
+        return Markup(markdown.markdown(text, extensions=['nl2br', 'fenced_code', 'tables']))
 
     return app
 
