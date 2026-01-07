@@ -27,8 +27,12 @@ class Config:
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')
 
     # Celery Configuration
-    CELERY_BROKER_URL = os.environ.get('REDIS_URL') or os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'
-    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL') or os.environ.get('CELERY_RESULT_BACKEND') or 'redis://localhost:6379/0'
+    _redis_url = os.environ.get('REDIS_URL') or os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'
+    # Heroku Redis uses rediss:// (SSL) - add required SSL params
+    if _redis_url.startswith('rediss://'):
+        _redis_url = _redis_url + '?ssl_cert_reqs=CERT_NONE'
+    CELERY_BROKER_URL = _redis_url
+    CELERY_RESULT_BACKEND = _redis_url
 
     # Pagination
     ITEMS_PER_PAGE = 20
