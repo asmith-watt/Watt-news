@@ -21,6 +21,10 @@ def create_app(config_class=Config):
     login_manager.login_view = 'auth.login'
     login_manager.login_message = 'Please log in to access this page.'
 
+    # Initialize Celery with app context
+    from app.celery import make_celery
+    make_celery(app)
+
     from app.auth import bp as auth_bp
     from app.main import bp as main_bp
     from app.api import bp as api_bp
