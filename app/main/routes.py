@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion
 from app.main import bp
 import requests
 
@@ -126,6 +126,105 @@ def push_to_cms(id):
         return jsonify({'error': f'Failed to push to CMS: {str(e)}'}), 500
     except Exception as e:
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+
+@bp.route('/content/<int:id>/version/<int:version_id>/push', methods=['POST'])
+@login_required
+def push_version_to_cms(id, version_id):
+    """Push a specific version of content to CMS."""
+    content = NewsContent.query.get_or_404(id)
+    version = ContentVersion.query.get_or_404(version_id)
+
+    # Verify version belongs to this content
+    if version.content_id != content.id:
+        return jsonify({'error': 'Version does not belong to this content'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    if version.pushed_to_cms:
+        return jsonify({'error': 'This version has already been pushed to CMS'}), 400
+
+    publication = content.publication
+    if not publication.cms_url or not publication.cms_api_key:
+        return jsonify({'error': 'CMS configuration not set for this publication'}), 400
+
+    try:
+        payload = {
+            'command': {
+                'input': [
+                    {
+                        'form': 'POST',
+                        'props': {
+                            'title': content.title,
+                            'type': 'ARTICLE',
+                            'body': version.content
+                        }
+                    }
+                ]
+            },
+            'view': 'main'
+        }
+
+        api_key = publication.cms_api_key
+        if not api_key.lower().startswith('bearer '):
+            api_key = f'Bearer {api_key}'
+
+        headers = {
+            'Authorization': api_key,
+            'Content-Type': 'application/json',
+            'x-namespace': 'watt/default'
+        }
+
+        response = requests.post(publication.cms_url, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        cms_response = response.json()
+        version.pushed_to_cms = True
+        version.cms_id = cms_response.get('id')
+        version.pushed_at = datetime.utcnow()
+        version.pushed_by_id = current_user.id
+
+        # Update parent content status
+        content.status = 'published'
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'{version.ai_provider.title()} version pushed to CMS successfully',
+            'cms_id': version.cms_id,
+            'version_id': version.id
+        })
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Failed to push to CMS: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+
+@bp.route('/content/<int:id>/select-version/<int:version_id>', methods=['POST'])
+@login_required
+def select_version(id, version_id):
+    """Select a specific version as the preferred version for this content."""
+    content = NewsContent.query.get_or_404(id)
+    version = ContentVersion.query.get_or_404(version_id)
+
+    # Verify version belongs to this content
+    if version.content_id != content.id:
+        return jsonify({'error': 'Version does not belong to this content'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    content.selected_version_id = version.id
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': f'Selected {version.ai_provider.title()} version',
+        'selected_version_id': version.id
+    })
 
 
 @bp.route('/content/<int:id>/status', methods=['POST'])

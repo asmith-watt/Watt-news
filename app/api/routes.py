@@ -2,7 +2,7 @@ from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime
 from app import db
-from app.models import NewsContent, NewsSource, Publication, WorkflowRun
+from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion
 from app.api import bp
 
 
@@ -76,19 +76,40 @@ def create_news():
     """
     Create a single news content item from JSON format.
 
-    Expected format:
+    Expected format (legacy - single version):
     {
       "publication_id": 1,
       "title": "...",
       "summary": "...",
       "body": "...",
       "keywords": ["keyword1", "keyword2"],
-      "references": [
+      "references": [...]
+    }
+
+    New format (multi-version):
+    {
+      "publication_id": 1,
+      "title": "...",
+      "source_url": "...",
+      "keywords": ["keyword1", "keyword2"],
+      "image_url": "...",
+      "versions": [
         {
-          "title": "...",
-          "source_name": "...",
-          "published_date": "YYYY-MM-DD",
-          "url": "..."
+          "ai_provider": "anthropic",
+          "ai_model": "claude-3-opus",
+          "quality_score": 85.5,
+          "deck": "...",
+          "teaser": "...",
+          "body": "...",
+          "summary": "...",
+          "notes": "..."
+        },
+        {
+          "ai_provider": "openai",
+          "ai_model": "gpt-4",
+          "quality_score": 82.0,
+          "deck": "...",
+          "body": "..."
         }
       ]
     }
@@ -155,17 +176,16 @@ def create_news():
                 except ValueError:
                     pass
 
-        source_url_str = ' | '.join(source_entries) if source_entries else None
-        source_name_str = ', '.join(set(source_names)) if source_names else None
+        source_url_str = data.get('source_url') or (' | '.join(source_entries) if source_entries else None)
+        source_name_str = data.get('source_name') or (', '.join(set(source_names)) if source_names else None)
 
+        # Check if we have versions (new multi-AI format)
+        versions_data = data.get('versions', [])
+
+        # Create parent NewsContent (shared metadata)
         content = NewsContent(
             publication_id=publication_id,
             title=data['title'],
-            deck=data.get('deck'),
-            teaser=data.get('teaser'),
-            content=data.get('body'),
-            summary=data.get('summary'),
-            notes=data.get('notes'),
             source_url=source_url_str,
             source_name=source_name_str,
             image_url=data.get('image_url'),
@@ -175,14 +195,64 @@ def create_news():
             status=data.get('status', 'staged')
         )
 
+        # If no versions provided, store content in legacy fields (backward compatibility)
+        if not versions_data:
+            content.deck = data.get('deck')
+            content.teaser = data.get('teaser')
+            content.content = data.get('body')
+            content.summary = data.get('summary')
+            content.notes = data.get('notes')
+
         db.session.add(content)
+        db.session.flush()  # Get content.id before creating versions
+
+        # Create ContentVersion records
+        created_versions = []
+        best_version = None
+        best_score = -1
+
+        for v_data in versions_data:
+            if not v_data.get('ai_provider'):
+                continue  # Skip versions without provider
+
+            version = ContentVersion(
+                content_id=content.id,
+                ai_provider=v_data['ai_provider'],
+                ai_model=v_data.get('ai_model'),
+                quality_score=v_data.get('quality_score'),
+                deck=v_data.get('deck'),
+                teaser=v_data.get('teaser'),
+                content=v_data.get('body') or v_data.get('content'),
+                summary=v_data.get('summary'),
+                notes=v_data.get('notes')
+            )
+            db.session.add(version)
+            db.session.flush()  # Get version.id
+            created_versions.append(version)
+
+            # Track best version by quality score
+            score = v_data.get('quality_score') or 0
+            if score > best_score:
+                best_score = score
+                best_version = version
+
+        # Auto-select the best version (highest quality score)
+        if best_version:
+            content.selected_version_id = best_version.id
+
         db.session.commit()
 
-        return jsonify({
+        response = {
             'success': True,
             'id': content.id,
             'message': 'News content created successfully'
-        }), 201
+        }
+
+        if created_versions:
+            response['version_ids'] = [v.id for v in created_versions]
+            response['selected_version_id'] = content.selected_version_id
+
+        return jsonify(response), 201
 
     except Exception as e:
         db.session.rollback()

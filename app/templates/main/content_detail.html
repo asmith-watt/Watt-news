@@ -40,17 +40,20 @@
                             class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                         Reject
                     </button>
+                    {% if content.versions|length == 0 %}
+                    <!-- Legacy push button - only shown when no versions exist -->
                     <button onclick="pushToCMS()"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                         Push to CMS
                     </button>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>
         </div>
 
         <div class="px-6 py-4">
-            <!-- Image Section -->
+            <!-- Image Section (shared across all versions) -->
             <div id="imageSection" class="mb-4">
                 {% if content.image_thumbnail or content.image_url %}
                 <div class="relative">
@@ -82,6 +85,111 @@
                 </div>
             </div>
 
+            <!-- Version Tabs (if multiple versions exist) -->
+            {% if content.versions|length > 0 %}
+            <div class="mb-6">
+                <div class="border-b border-gray-200">
+                    <nav class="flex space-x-4" aria-label="Versions">
+                        {% for version in content.versions %}
+                        <button onclick="selectVersionTab({{ version.id }})"
+                                id="version-tab-{{ version.id }}"
+                                class="version-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px
+                                    {% if version.id == content.selected_version_id %}
+                                    border-blue-600 text-blue-600
+                                    {% else %}
+                                    border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
+                                    {% endif %}">
+                            {{ version.ai_provider|title }}
+                            {% if version.quality_score %}
+                            <span class="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 rounded">{{ version.quality_score|round(1) }}</span>
+                            {% endif %}
+                            {% if version.pushed_to_cms %}
+                            <span class="ml-1 text-green-500" title="Pushed to CMS">&#10003;</span>
+                            {% endif %}
+                        </button>
+                        {% endfor %}
+                    </nav>
+                </div>
+
+                <!-- Version Content Panels -->
+                {% for version in content.versions %}
+                <div id="version-panel-{{ version.id }}"
+                     class="version-panel mt-4 {% if version.id != content.selected_version_id %}hidden{% endif %}">
+
+                    <!-- Version Action Bar -->
+                    <div class="mb-4 p-3 bg-gray-50 rounded flex items-center justify-between">
+                        <div class="text-sm text-gray-600">
+                            <span class="font-medium">{{ version.ai_provider|title }}</span>
+                            {% if version.ai_model %}
+                            <span class="text-gray-400">/ {{ version.ai_model }}</span>
+                            {% endif %}
+                            {% if version.quality_score %}
+                            <span class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">
+                                Score: {{ version.quality_score|round(1) }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            {% if version.id != content.selected_version_id %}
+                            <button onclick="setSelectedVersion({{ version.id }})"
+                                    class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                                Set as Primary
+                            </button>
+                            {% else %}
+                            <span class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded">Primary</span>
+                            {% endif %}
+                            {% if not version.pushed_to_cms %}
+                            <button onclick="pushVersionToCMS({{ version.id }})"
+                                    class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                                Push to CMS
+                            </button>
+                            {% else %}
+                            <span class="px-3 py-1 text-sm bg-green-100 text-green-700 rounded"
+                                  title="Pushed {{ version.pushed_at.strftime('%Y-%m-%d %H:%M') if version.pushed_at else '' }}">
+                                Pushed &#10003;
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if version.deck %}
+                    <div class="mb-4 p-4 bg-indigo-50 rounded">
+                        <h3 class="font-bold text-gray-700 mb-2">Deck</h3>
+                        <p class="text-gray-700 text-lg">{{ version.deck }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if version.teaser %}
+                    <div class="mb-4 p-4 bg-purple-50 rounded">
+                        <h3 class="font-bold text-gray-700 mb-2">Teaser</h3>
+                        <p class="text-gray-700">{{ version.teaser }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if version.summary %}
+                    <div class="mb-4 p-4 bg-blue-50 rounded">
+                        <h3 class="font-bold text-gray-700 mb-2">Summary</h3>
+                        <p class="text-gray-700">{{ version.summary }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if version.content %}
+                    <div class="prose max-w-none">
+                        {{ version.content|markdown }}
+                    </div>
+                    {% endif %}
+
+                    {% if version.notes %}
+                    <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                        <h3 class="font-bold text-gray-700 mb-2">AI Notes</h3>
+                        <p class="text-gray-700 whitespace-pre-wrap">{{ version.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <!-- Legacy content display (no versions) -->
             {% if content.deck %}
             <div class="mb-4 p-4 bg-indigo-50 rounded">
                 <h3 class="font-bold text-gray-700 mb-2">Deck</h3>
@@ -114,6 +222,7 @@
                 <h3 class="font-bold text-gray-700 mb-2">AI Notes</h3>
                 <p class="text-gray-700 whitespace-pre-wrap">{{ content.notes }}</p>
             </div>
+            {% endif %}
             {% endif %}
 
             {% if content.keywords %}
@@ -408,6 +517,74 @@ function resetImageButton() {
     // Check if we have an image to determine button text
     const hasImage = document.getElementById('contentImage') !== null;
     btn.textContent = hasImage ? 'Regenerate Image' : 'Generate Image';
+}
+
+// Version Tab Functions
+function selectVersionTab(versionId) {
+    // Update tab styling
+    document.querySelectorAll('.version-tab').forEach(tab => {
+        tab.classList.remove('border-blue-600', 'text-blue-600');
+        tab.classList.add('border-transparent', 'text-gray-500');
+    });
+    const selectedTab = document.getElementById('version-tab-' + versionId);
+    if (selectedTab) {
+        selectedTab.classList.remove('border-transparent', 'text-gray-500');
+        selectedTab.classList.add('border-blue-600', 'text-blue-600');
+    }
+
+    // Show/hide content panels
+    document.querySelectorAll('.version-panel').forEach(panel => {
+        panel.classList.add('hidden');
+    });
+    const selectedPanel = document.getElementById('version-panel-' + versionId);
+    if (selectedPanel) {
+        selectedPanel.classList.remove('hidden');
+    }
+}
+
+function setSelectedVersion(versionId) {
+    fetch('/content/{{ content.id }}/select-version/' + versionId, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function pushVersionToCMS(versionId) {
+    if (!confirm('Are you sure you want to push this version to the CMS?')) {
+        return;
+    }
+
+    fetch('/content/{{ content.id }}/version/' + versionId + '/push', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
 }
 </script>
 {% endblock %}

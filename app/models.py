@@ -121,6 +121,7 @@ class NewsContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
     title = db.Column(db.String(512), nullable=False)
+    # Legacy content fields - kept for backward compatibility
     deck = db.Column(db.Text)
     teaser = db.Column(db.Text)
     content = db.Column(db.Text)
@@ -139,6 +140,7 @@ class NewsContent(db.Model):
 
     extra_data = db.Column(db.JSON)
 
+    # Legacy CMS push tracking - kept for backward compatibility
     pushed_to_cms = db.Column(db.Boolean, default=False)
     cms_id = db.Column(db.String(128))
     pushed_at = db.Column(db.DateTime)
@@ -147,10 +149,54 @@ class NewsContent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Multi-version support
+    selected_version_id = db.Column(db.Integer, db.ForeignKey('content_version.id', use_alter=True))
+
     pushed_by = db.relationship('User', backref='pushed_content')
+    selected_version = db.relationship('ContentVersion', foreign_keys=[selected_version_id], post_update=True)
 
     def __repr__(self):
         return f'<NewsContent {self.title[:50]}>'
+
+    def get_display_version(self):
+        """Returns the selected version or falls back to legacy content fields."""
+        if self.selected_version:
+            return self.selected_version
+        # Return self for backward compatibility (legacy content in parent)
+        return self
+
+
+class ContentVersion(db.Model):
+    """Represents a single AI-generated version of an article."""
+    id = db.Column(db.Integer, primary_key=True)
+    content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False, index=True)
+
+    # AI Provider info
+    ai_provider = db.Column(db.String(32), nullable=False)  # 'openai', 'anthropic', 'gemini'
+    ai_model = db.Column(db.String(64))  # 'gpt-4', 'claude-3-opus', 'gemini-pro'
+    quality_score = db.Column(db.Float)  # Optional score from n8n (0-100)
+
+    # Content fields
+    deck = db.Column(db.Text)
+    teaser = db.Column(db.Text)
+    content = db.Column(db.Text)
+    summary = db.Column(db.Text)
+    notes = db.Column(db.Text)
+
+    # CMS push tracking (per-version)
+    pushed_to_cms = db.Column(db.Boolean, default=False)
+    cms_id = db.Column(db.String(128))
+    pushed_at = db.Column(db.DateTime)
+    pushed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    news_content = db.relationship('NewsContent', foreign_keys=[content_id], backref='versions')
+    pushed_by = db.relationship('User')
+
+    def __repr__(self):
+        return f'<ContentVersion {self.ai_provider} for content {self.content_id}>'
 
 
 class WorkflowRun(db.Model):
