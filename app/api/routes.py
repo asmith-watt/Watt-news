@@ -76,7 +76,9 @@ def create_news():
     """
     Create a single news content item from JSON format.
 
-    Expected format (legacy - single version):
+    Supported formats:
+
+    1. Legacy (single version, no ai_provider):
     {
       "publication_id": 1,
       "title": "...",
@@ -86,32 +88,39 @@ def create_news():
       "references": [...]
     }
 
-    New format (multi-version):
+    2. Flat array of versions (recommended for n8n):
+    [
+      {
+        "publication_id": 1,
+        "ai_provider": "anthropic",
+        "ai_model": "claude-3-opus",
+        "quality_score": 87.5,
+        "title": "...",
+        "deck": "...",
+        "teaser": "...",
+        "body": "...",
+        "summary": "...",
+        "notes": "...",
+        "keywords": ["k1", "k2"],
+        "references": [...]
+      },
+      {
+        "publication_id": 1,
+        "ai_provider": "openai",
+        "ai_model": "gpt-4",
+        "quality_score": 82.0,
+        "title": "...",
+        "deck": "...",
+        "body": "...",
+        ...
+      }
+    ]
+
+    3. Nested versions format:
     {
       "publication_id": 1,
       "title": "...",
-      "source_url": "...",
-      "keywords": ["keyword1", "keyword2"],
-      "image_url": "...",
-      "versions": [
-        {
-          "ai_provider": "anthropic",
-          "ai_model": "claude-3-opus",
-          "quality_score": 85.5,
-          "deck": "...",
-          "teaser": "...",
-          "body": "...",
-          "summary": "...",
-          "notes": "..."
-        },
-        {
-          "ai_provider": "openai",
-          "ai_model": "gpt-4",
-          "quality_score": 82.0,
-          "deck": "...",
-          "body": "..."
-        }
-      ]
+      "versions": [...]
     }
     """
     data = request.get_json()
@@ -119,11 +128,24 @@ def create_news():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    # Handle array format - extract first item
+    # Unwrap if nested in "payload" key (common n8n pattern)
+    if isinstance(data, dict) and 'payload' in data:
+        data = data['payload']
+
+    # Detect format: flat array of versions vs single object
+    versions_data = []
     if isinstance(data, list):
         if len(data) == 0:
             return jsonify({'error': 'Empty list provided'}), 400
-        data = data[0]
+
+        # Check if this is a flat array of versions (each item has ai_provider)
+        if data[0].get('ai_provider'):
+            # Flat array format: extract header from first item, all items are versions
+            versions_data = data
+            data = data[0]  # Use first item for header fields
+        else:
+            # Legacy array format: just take first item
+            data = data[0]
 
     # Check for publication_id
     if 'publication_id' not in data:
@@ -179,8 +201,9 @@ def create_news():
         source_url_str = data.get('source_url') or (' | '.join(source_entries) if source_entries else None)
         source_name_str = data.get('source_name') or (', '.join(set(source_names)) if source_names else None)
 
-        # Check if we have versions (new multi-AI format)
-        versions_data = data.get('versions', [])
+        # If no versions from flat array, check for nested versions format
+        if not versions_data:
+            versions_data = data.get('versions', [])
 
         # Create parent NewsContent (shared metadata)
         content = NewsContent(
