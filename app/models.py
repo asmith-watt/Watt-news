@@ -172,9 +172,10 @@ class ContentVersion(db.Model):
     content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False, index=True)
 
     # AI Provider info
-    ai_provider = db.Column(db.String(32), nullable=False)  # 'openai', 'anthropic', 'gemini'
+    ai_provider = db.Column(db.String(32), nullable=False)  # 'openai', 'anthropic', 'gemini', 'final'
     ai_model = db.Column(db.String(64))  # 'gpt-4', 'claude-3-opus', 'gemini-pro'
     quality_score = db.Column(db.Float)  # Optional score from n8n (0-100)
+    is_final = db.Column(db.Boolean, default=False)  # True if this is the audited/patched final version
 
     # Content fields
     deck = db.Column(db.Text)

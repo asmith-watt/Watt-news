@@ -540,3 +540,122 @@ def complete_image_workflow(workflow_id):
         'image_thumbnail': content.image_thumbnail,
         'image_url': content.image_url
     })
+
+
+@bp.route('/workflow/<workflow_id>/audit-complete', methods=['POST'])
+@require_api_key
+def complete_audit_workflow(workflow_id):
+    """
+    Called by n8n when audit workflow completes.
+    Creates a new final/patched version and optionally updates quality scores on existing versions.
+
+    Expected payload:
+    {
+      "content_id": 123,
+      "status": "completed",
+      "final_version": {
+        "ai_provider": "final",
+        "ai_model": "audited",
+        "quality_score": 95.0,
+        "deck": "...",
+        "teaser": "...",
+        "body": "...",
+        "summary": "...",
+        "notes": "Audit notes..."
+      },
+      "version_scores": [
+        {"version_id": 1, "quality_score": 82.5},
+        {"version_id": 2, "quality_score": 78.0}
+      ]
+    }
+    """
+    workflow = WorkflowRun.query.get(workflow_id)
+    if not workflow:
+        return jsonify({'error': 'Workflow not found'}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Get content_id from payload or workflow message
+    content_id = data.get('content_id')
+    if not content_id and workflow.message:
+        if workflow.message.startswith('content_id:'):
+            try:
+                content_id = int(workflow.message.split(':')[1])
+            except (ValueError, IndexError):
+                pass
+
+    if not content_id:
+        workflow.status = 'failed'
+        workflow.message = 'No content_id provided'
+        workflow.completed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'error': 'No content_id provided'}), 400
+
+    content = NewsContent.query.get(content_id)
+    if not content:
+        workflow.status = 'failed'
+        workflow.message = f'Content {content_id} not found'
+        workflow.completed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'error': 'Content not found'}), 404
+
+    try:
+        # Update quality scores on existing versions if provided
+        version_scores = data.get('version_scores', [])
+        for score_update in version_scores:
+            version_id = score_update.get('version_id')
+            new_score = score_update.get('quality_score')
+            if version_id and new_score is not None:
+                version = ContentVersion.query.get(version_id)
+                if version and version.content_id == content.id:
+                    version.quality_score = new_score
+
+        # Create final/patched version if provided
+        final_version_data = data.get('final_version')
+        new_version = None
+
+        if final_version_data:
+            new_version = ContentVersion(
+                content_id=content.id,
+                ai_provider=final_version_data.get('ai_provider', 'final'),
+                ai_model=final_version_data.get('ai_model', 'audited'),
+                quality_score=final_version_data.get('quality_score'),
+                deck=final_version_data.get('deck'),
+                teaser=final_version_data.get('teaser'),
+                content=final_version_data.get('body') or final_version_data.get('content'),
+                summary=final_version_data.get('summary'),
+                notes=final_version_data.get('notes'),
+                is_final=True
+            )
+            db.session.add(new_version)
+            db.session.flush()
+
+            # Set as selected version
+            content.selected_version_id = new_version.id
+
+        # Update workflow status
+        workflow.status = data.get('status', 'completed')
+        workflow.message = data.get('message', f'Audit completed for content {content_id}')
+        workflow.completed_at = datetime.utcnow()
+
+        db.session.commit()
+
+        response = {
+            'success': True,
+            'id': workflow.id,
+            'status': workflow.status,
+            'content_id': content_id
+        }
+
+        if new_version:
+            response['final_version_id'] = new_version.id
+
+        return jsonify(response)
+
+    except Exception as e:
+        db.session.rollback()
+        workflow.status = 'failed'
+        workflow.message = str(e)
+        workflow.completed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'error': f'Failed to process audit result: {str(e)}'}), 500

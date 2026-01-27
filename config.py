@@ -25,6 +25,7 @@ class Config:
     # n8n Workflow Triggers
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')
+    N8N_AUDIT_WORKFLOW_URL = os.environ.get('N8N_AUDIT_WORKFLOW_URL')
 
     # Celery Configuration
     _redis_url = os.environ.get('REDIS_URL') or os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'

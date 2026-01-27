@@ -88,6 +88,20 @@
             <!-- Version Tabs (if multiple versions exist) -->
             {% if content.versions|length > 0 %}
             <div class="mb-6">
+                <!-- Version Header with Audit Button -->
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-semibold text-gray-700">Article Versions</h3>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="triggerAudit()" id="auditBtn"
+                                class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700">
+                            Audit & Patch
+                        </button>
+                    </div>
+                </div>
+                <!-- Audit status -->
+                <div id="auditStatus" class="hidden mb-3 p-3 rounded">
+                </div>
+
                 <div class="border-b border-gray-200">
                     <nav class="flex space-x-4" aria-label="Versions">
                         {% for version in content.versions %}
@@ -99,9 +113,12 @@
                                     {% else %}
                                     border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
                                     {% endif %}">
+                            {% if version.is_final %}
+                            <span class="text-amber-600">&#9733;</span>
+                            {% endif %}
                             {{ version.ai_provider|title }}
                             {% if version.quality_score %}
-                            <span class="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 rounded">{{ version.quality_score|round(1) }}</span>
+                            <span class="ml-1 px-1.5 py-0.5 text-xs {% if version.is_final %}bg-amber-100{% else %}bg-gray-100{% endif %} rounded">{{ version.quality_score|round(1) }}</span>
                             {% endif %}
                             {% if version.pushed_to_cms %}
                             <span class="ml-1 text-green-500" title="Pushed to CMS">&#10003;</span>
@@ -117,14 +134,19 @@
                      class="version-panel mt-4 {% if version.id != content.selected_version_id %}hidden{% endif %}">
 
                     <!-- Version Action Bar -->
-                    <div class="mb-4 p-3 bg-gray-50 rounded flex items-center justify-between">
+                    <div class="mb-4 p-3 {% if version.is_final %}bg-amber-50{% else %}bg-gray-50{% endif %} rounded flex items-center justify-between">
                         <div class="text-sm text-gray-600">
+                            {% if version.is_final %}
+                            <span class="mr-2 px-2 py-0.5 bg-amber-200 text-amber-800 rounded text-xs font-semibold">
+                                FINAL
+                            </span>
+                            {% endif %}
                             <span class="font-medium">{{ version.ai_provider|title }}</span>
                             {% if version.ai_model %}
                             <span class="text-gray-400">/ {{ version.ai_model }}</span>
                             {% endif %}
                             {% if version.quality_score %}
-                            <span class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">
+                            <span class="ml-2 px-2 py-0.5 {% if version.is_final %}bg-amber-100 text-amber-800{% else %}bg-blue-100 text-blue-800{% endif %} rounded text-xs">
                                 Score: {{ version.quality_score|round(1) }}
                             </span>
                             {% endif %}
@@ -585,6 +607,105 @@ function pushVersionToCMS(versionId) {
     .catch(error => {
         alert('Error: ' + error);
     });
+}
+
+// Audit Functions
+let auditPollingInterval = null;
+
+function triggerAudit() {
+    const btn = document.getElementById('auditBtn');
+    const statusDiv = document.getElementById('auditStatus');
+
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    // Show status
+    statusDiv.classList.remove('hidden', 'bg-green-100', 'bg-red-100');
+    statusDiv.classList.add('bg-yellow-100');
+    statusDiv.innerHTML = '<span class="text-yellow-800">Starting audit workflow...</span>';
+
+    fetch('/content/{{ content.id }}/audit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            btn.textContent = 'Auditing...';
+            statusDiv.innerHTML = '<span class="text-yellow-800">Auditing and patching versions... This may take a few minutes.</span>';
+            // Start polling for status
+            startAuditPolling(data.workflow_id);
+        } else {
+            resetAuditButton();
+            statusDiv.classList.remove('bg-yellow-100');
+            statusDiv.classList.add('bg-red-100');
+            statusDiv.innerHTML = '<span class="text-red-800">Error: ' + data.error + '</span>';
+        }
+    })
+    .catch(error => {
+        resetAuditButton();
+        statusDiv.classList.remove('bg-yellow-100');
+        statusDiv.classList.add('bg-red-100');
+        statusDiv.innerHTML = '<span class="text-red-800">Error: ' + error + '</span>';
+    });
+}
+
+function startAuditPolling(workflowId) {
+    let pollCount = 0;
+    const maxPolls = 180; // Poll for up to 6 minutes (every 2 seconds)
+
+    auditPollingInterval = setInterval(() => {
+        pollCount++;
+
+        if (pollCount > maxPolls) {
+            clearInterval(auditPollingInterval);
+            resetAuditButton();
+            const statusDiv = document.getElementById('auditStatus');
+            statusDiv.classList.remove('bg-yellow-100');
+            statusDiv.classList.add('bg-red-100');
+            statusDiv.innerHTML = '<span class="text-red-800">Audit timed out. Please try again.</span>';
+            return;
+        }
+
+        fetch('/api/workflow/' + workflowId + '/status')
+        .then(response => response.json())
+        .then(data => {
+            const statusDiv = document.getElementById('auditStatus');
+
+            if (data.status === 'completed') {
+                clearInterval(auditPollingInterval);
+                statusDiv.classList.remove('bg-yellow-100');
+                statusDiv.classList.add('bg-green-100');
+                statusDiv.innerHTML = '<span class="text-green-800">Audit completed! Reloading...</span>';
+                // Reload page to show the new final version
+                setTimeout(() => location.reload(), 1000);
+            } else if (data.status === 'failed') {
+                clearInterval(auditPollingInterval);
+                resetAuditButton();
+                statusDiv.classList.remove('bg-yellow-100');
+                statusDiv.classList.add('bg-red-100');
+                statusDiv.innerHTML = '<span class="text-red-800">Audit failed: ' + (data.message || 'Unknown error') + '</span>';
+            }
+            // If still running/pending, continue polling
+        })
+        .catch(error => {
+            // Don't stop polling on network errors, just log
+            console.error('Polling error:', error);
+        });
+    }, 2000); // Poll every 2 seconds
+}
+
+function resetAuditButton() {
+    const btn = document.getElementById('auditBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btn.textContent = 'Audit & Patch';
+    }
 }
 </script>
 {% endblock %}
