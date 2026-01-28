@@ -335,12 +335,19 @@ def generate_image(id):
     db.session.commit()
 
     try:
+        # Get summary from selected version or fall back to legacy fields
+        version = content.selected_version
+        if version:
+            summary = version.summary or version.teaser or version.deck or ''
+        else:
+            summary = content.summary or content.teaser or content.deck or ''
+
         # POST to n8n with article summary
         payload = {
             'workflow_id': workflow_id,
             'content_id': content.id,
             'title': content.title,
-            'summary': content.summary or content.teaser or content.deck or ''
+            'summary': summary
         }
 
         response = requests.post(
