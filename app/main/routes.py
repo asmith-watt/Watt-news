@@ -420,7 +420,7 @@ def trigger_audit(id):
 
         payload = {
             'workflow_id': workflow_id,
-            'content_id': content.id,
+            'article_id': content.id,
             'title': content.title,
             'source_url': content.source_url,
             'source_name': content.source_name,
