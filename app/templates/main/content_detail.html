@@ -123,6 +123,9 @@
                             {% if version.pushed_to_cms %}
                             <span class="ml-1 text-green-500" title="Pushed to CMS">&#10003;</span>
                             {% endif %}
+                            <!-- Audit indicators (populated via JS) -->
+                            <span id="audit-badge-{{ version.id }}" class="hidden ml-1 px-1.5 py-0.5 text-xs rounded"></span>
+                            <span id="patched-badge-{{ version.id }}" class="hidden ml-1 text-purple-500" title="Has patched version">&#9998;</span>
                         </button>
                         {% endfor %}
                     </nav>
@@ -207,6 +210,47 @@
                         <p class="text-gray-700 whitespace-pre-wrap">{{ version.notes }}</p>
                     </div>
                     {% endif %}
+
+                    <!-- Audit Results Section (populated via JS) -->
+                    <div id="audit-section-{{ version.id }}" class="hidden mt-6">
+                        <div class="border border-gray-200 rounded-lg overflow-hidden">
+                            <button onclick="toggleAuditSection({{ version.id }})"
+                                    class="w-full px-4 py-3 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors">
+                                <div class="flex items-center space-x-3">
+                                    <span class="font-semibold text-gray-700">Audit Results</span>
+                                    <span id="audit-risk-badge-{{ version.id }}" class="px-2 py-0.5 text-xs rounded font-medium"></span>
+                                    <span id="audit-issue-count-{{ version.id }}" class="text-sm text-gray-500"></span>
+                                </div>
+                                <svg id="audit-chevron-{{ version.id }}" class="w-5 h-5 text-gray-500 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                            <div id="audit-content-{{ version.id }}" class="hidden">
+                                <!-- Issues List -->
+                                <div id="audit-issues-{{ version.id }}" class="divide-y divide-gray-200">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Patched Version Section (populated via JS) -->
+                    <div id="patched-section-{{ version.id }}" class="hidden mt-4">
+                        <div class="border border-purple-200 rounded-lg overflow-hidden">
+                            <button onclick="togglePatchedSection({{ version.id }})"
+                                    class="w-full px-4 py-3 bg-purple-50 flex items-center justify-between hover:bg-purple-100 transition-colors">
+                                <div class="flex items-center space-x-3">
+                                    <span class="font-semibold text-purple-700">Patched Draft</span>
+                                    <span id="patched-provider-{{ version.id }}" class="text-sm text-purple-600"></span>
+                                </div>
+                                <svg id="patched-chevron-{{ version.id }}" class="w-5 h-5 text-purple-500 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                            <div id="patched-content-{{ version.id }}" class="hidden p-4">
+                                <div id="patched-draft-{{ version.id }}" class="prose max-w-none"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -707,5 +751,247 @@ function resetAuditButton() {
         btn.textContent = 'Audit & Patch';
     }
 }
+
+// Audit Data Display Functions
+let auditData = null;
+
+function loadAuditData() {
+    fetch('/content/{{ content.id }}/audit-data')
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            console.error('Failed to load audit data:', data.error);
+            return;
+        }
+        auditData = data;
+        renderAuditData();
+    })
+    .catch(error => {
+        console.error('Error loading audit data:', error);
+    });
+}
+
+function renderAuditData() {
+    if (!auditData) return;
+
+    // Group audits and patches by version_id
+    const auditsByVersion = {};
+    const patchesByVersion = {};
+
+    auditData.version_audits.forEach(audit => {
+        if (!auditsByVersion[audit.version_id]) {
+            auditsByVersion[audit.version_id] = [];
+        }
+        auditsByVersion[audit.version_id].push(audit);
+    });
+
+    auditData.patched_versions.forEach(patch => {
+        if (!patchesByVersion[patch.version_id]) {
+            patchesByVersion[patch.version_id] = [];
+        }
+        patchesByVersion[patch.version_id].push(patch);
+    });
+
+    // Render for each version
+    Object.keys(auditsByVersion).forEach(versionId => {
+        const audits = auditsByVersion[versionId];
+        const latestAudit = audits[0]; // Most recent first
+
+        // Show audit section
+        const auditSection = document.getElementById('audit-section-' + versionId);
+        if (auditSection) {
+            auditSection.classList.remove('hidden');
+        }
+
+        // Update tab badge
+        const auditBadge = document.getElementById('audit-badge-' + versionId);
+        if (auditBadge && latestAudit.issues) {
+            const issueCount = latestAudit.issues.length;
+            if (issueCount > 0) {
+                auditBadge.textContent = issueCount + ' issue' + (issueCount > 1 ? 's' : '');
+                auditBadge.classList.remove('hidden');
+                auditBadge.classList.add(getRiskBadgeClass(latestAudit.overall_risk));
+            }
+        }
+
+        // Update risk badge in section
+        const riskBadge = document.getElementById('audit-risk-badge-' + versionId);
+        if (riskBadge) {
+            riskBadge.textContent = (latestAudit.overall_risk || 'unknown').toUpperCase();
+            riskBadge.className = 'px-2 py-0.5 text-xs rounded font-medium ' + getRiskBadgeClass(latestAudit.overall_risk);
+        }
+
+        // Update issue count
+        const issueCountEl = document.getElementById('audit-issue-count-' + versionId);
+        if (issueCountEl && latestAudit.issues) {
+            const count = latestAudit.issues.length;
+            issueCountEl.textContent = count + ' issue' + (count !== 1 ? 's' : '') + ' found';
+        }
+
+        // Render issues
+        const issuesContainer = document.getElementById('audit-issues-' + versionId);
+        if (issuesContainer && latestAudit.issues) {
+            issuesContainer.innerHTML = latestAudit.issues.map((issue, idx) => renderIssue(issue, idx)).join('');
+        }
+    });
+
+    // Render patched versions
+    Object.keys(patchesByVersion).forEach(versionId => {
+        const patches = patchesByVersion[versionId];
+        const latestPatch = patches[0];
+
+        // Show patched section
+        const patchedSection = document.getElementById('patched-section-' + versionId);
+        if (patchedSection) {
+            patchedSection.classList.remove('hidden');
+        }
+
+        // Update tab badge
+        const patchedBadge = document.getElementById('patched-badge-' + versionId);
+        if (patchedBadge) {
+            patchedBadge.classList.remove('hidden');
+        }
+
+        // Update provider info
+        const providerEl = document.getElementById('patched-provider-' + versionId);
+        if (providerEl) {
+            let providerText = '';
+            if (latestPatch.ai_provider) {
+                providerText = latestPatch.ai_provider;
+                if (latestPatch.ai_model) {
+                    providerText += ' / ' + latestPatch.ai_model;
+                }
+            }
+            providerEl.textContent = providerText;
+        }
+
+        // Render patched draft
+        const draftEl = document.getElementById('patched-draft-' + versionId);
+        if (draftEl && latestPatch.patched_draft) {
+            // Simple markdown-like rendering (or just display as text)
+            draftEl.innerHTML = '<div class="whitespace-pre-wrap">' + escapeHtml(latestPatch.patched_draft) + '</div>';
+        }
+    });
+}
+
+function getRiskBadgeClass(risk) {
+    switch ((risk || '').toLowerCase()) {
+        case 'low':
+            return 'bg-green-100 text-green-800';
+        case 'medium':
+            return 'bg-yellow-100 text-yellow-800';
+        case 'high':
+            return 'bg-red-100 text-red-800';
+        default:
+            return 'bg-gray-100 text-gray-800';
+    }
+}
+
+function renderIssue(issue, index) {
+    const location = issue.location || {};
+    const evidence = issue.evidence || {};
+    const fix = issue.recommended_fix || {};
+
+    return `
+        <div class="p-4 bg-white">
+            <div class="flex items-start space-x-3">
+                <span class="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-red-100 text-red-600 rounded-full text-sm font-medium">
+                    ${index + 1}
+                </span>
+                <div class="flex-1 min-w-0">
+                    ${location.quote ? `
+                    <div class="mb-2 p-2 bg-gray-50 border-l-4 border-gray-300 rounded">
+                        <p class="text-sm text-gray-600 italic">"${escapeHtml(location.quote)}"</p>
+                        ${location.paragraph_index !== undefined ? `
+                        <p class="text-xs text-gray-400 mt-1">Paragraph ${location.paragraph_index + 1}${location.sentence_index !== undefined ? ', Sentence ' + (location.sentence_index + 1) : ''}</p>
+                        ` : ''}
+                    </div>
+                    ` : ''}
+
+                    <div class="mb-2">
+                        <span class="text-sm font-medium text-gray-700">Problem:</span>
+                        <p class="text-sm text-gray-600">${escapeHtml(issue.problem || 'No description')}</p>
+                    </div>
+
+                    ${evidence.status ? `
+                    <div class="mb-2">
+                        <span class="text-sm font-medium text-gray-700">Evidence:</span>
+                        <span class="ml-1 px-2 py-0.5 text-xs rounded ${getEvidenceStatusClass(evidence.status)}">${escapeHtml(formatEvidenceStatus(evidence.status))}</span>
+                        ${evidence.source_url ? `<a href="${escapeHtml(evidence.source_url)}" target="_blank" class="ml-2 text-xs text-blue-600 hover:underline">View Source</a>` : ''}
+                        ${evidence.notes ? `<p class="text-xs text-gray-500 mt-1">${escapeHtml(evidence.notes)}</p>` : ''}
+                    </div>
+                    ` : ''}
+
+                    ${fix.action ? `
+                    <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                        <span class="text-sm font-medium text-green-700">Recommended Fix:</span>
+                        <span class="ml-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">${escapeHtml(formatFixAction(fix.action))}</span>
+                        ${fix.replacement_text ? `
+                        <div class="mt-2 p-2 bg-white border border-green-200 rounded">
+                            <p class="text-sm text-gray-700">${escapeHtml(fix.replacement_text)}</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getEvidenceStatusClass(status) {
+    switch ((status || '').toLowerCase()) {
+        case 'verified':
+        case 'found_in_sources':
+            return 'bg-green-100 text-green-700';
+        case 'not_found_in_sources':
+        case 'unverified':
+            return 'bg-red-100 text-red-700';
+        case 'partial':
+            return 'bg-yellow-100 text-yellow-700';
+        default:
+            return 'bg-gray-100 text-gray-700';
+    }
+}
+
+function formatEvidenceStatus(status) {
+    return (status || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function formatFixAction(action) {
+    return (action || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function toggleAuditSection(versionId) {
+    const content = document.getElementById('audit-content-' + versionId);
+    const chevron = document.getElementById('audit-chevron-' + versionId);
+    if (content && chevron) {
+        content.classList.toggle('hidden');
+        chevron.classList.toggle('rotate-180');
+    }
+}
+
+function togglePatchedSection(versionId) {
+    const content = document.getElementById('patched-content-' + versionId);
+    const chevron = document.getElementById('patched-chevron-' + versionId);
+    if (content && chevron) {
+        content.classList.toggle('hidden');
+        chevron.classList.toggle('rotate-180');
+    }
+}
+
+// Load audit data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    {% if content.versions|length > 0 %}
+    loadAuditData();
+    {% endif %}
+});
 </script>
 {% endblock %}

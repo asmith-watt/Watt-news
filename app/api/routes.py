@@ -2,7 +2,7 @@ from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime
 from app import db
-from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion
+from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion
 from app.api import bp
 
 
@@ -641,3 +641,158 @@ def complete_audit_workflow(workflow_id):
         workflow.completed_at = datetime.utcnow()
         db.session.commit()
         return jsonify({'error': f'Failed to process audit result: {str(e)}'}), 500
+
+
+@bp.route('/version-audit', methods=['POST'])
+@require_api_key
+def create_version_audit():
+    """
+    Called by n8n after audit bot processes a version.
+    Stores the issues/problems found for a specific article version.
+
+    Expected payload:
+    {
+      "original_draft_input": "original draft of article here",
+      "article_id": "722",
+      "workflow_id": "wf_123",
+      "version_id": "92",
+      "ai_provider": "openai",
+      "ai_model": "gpt-4.1",
+      "overall_risk": "medium",
+      "issues": [
+        {
+          "location": {...},
+          "problem": "...",
+          "evidence": {...},
+          "recommended_fix": {...}
+        }
+      ]
+    }
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Get required fields
+    article_id = data.get('article_id')
+    version_id = data.get('version_id')
+    issues = data.get('issues')
+
+    if not article_id:
+        return jsonify({'error': 'Missing required field: article_id'}), 400
+    if not version_id:
+        return jsonify({'error': 'Missing required field: version_id'}), 400
+    if issues is None:
+        return jsonify({'error': 'Missing required field: issues'}), 400
+
+    # Convert IDs to integers
+    try:
+        article_id = int(article_id)
+        version_id = int(version_id)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'article_id and version_id must be valid integers'}), 400
+
+    # Verify article and version exist
+    content = NewsContent.query.get(article_id)
+    if not content:
+        return jsonify({'error': 'Article not found'}), 404
+
+    version = ContentVersion.query.get(version_id)
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+
+    if version.content_id != article_id:
+        return jsonify({'error': 'Version does not belong to this article'}), 400
+
+    try:
+        version_audit = VersionAudit(
+            workflow_run_id=data.get('workflow_id'),
+            content_id=article_id,
+            version_id=version_id,
+            ai_provider=data.get('ai_provider'),
+            ai_model=data.get('ai_model'),
+            overall_risk=data.get('overall_risk'),
+            original_draft=data.get('original_draft_input'),
+            issues=issues
+        )
+        db.session.add(version_audit)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'id': version_audit.id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create version audit: {str(e)}'}), 500
+
+
+@bp.route('/patched-version', methods=['POST'])
+@require_api_key
+def create_patched_version():
+    """
+    Called by n8n after editor bot creates a patched draft.
+    Stores the patched draft for a specific article version.
+
+    Expected payload:
+    {
+      "article_id": "722",
+      "workflow_id": "72fb7649-3fa8-4414-ba43-3513a5cec1eb",
+      "version_id": "92",
+      "ai_provider": "anthropic",
+      "ai_model": "Claude 4 Sonnet",
+      "patched_draft": "Patched draft body text"
+    }
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Get required fields
+    article_id = data.get('article_id')
+    version_id = data.get('version_id')
+    patched_draft = data.get('patched_draft')
+
+    if not article_id:
+        return jsonify({'error': 'Missing required field: article_id'}), 400
+    if not version_id:
+        return jsonify({'error': 'Missing required field: version_id'}), 400
+    if not patched_draft:
+        return jsonify({'error': 'Missing required field: patched_draft'}), 400
+
+    # Convert IDs to integers
+    try:
+        article_id = int(article_id)
+        version_id = int(version_id)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'article_id and version_id must be valid integers'}), 400
+
+    # Verify article and version exist
+    content = NewsContent.query.get(article_id)
+    if not content:
+        return jsonify({'error': 'Article not found'}), 404
+
+    version = ContentVersion.query.get(version_id)
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+
+    if version.content_id != article_id:
+        return jsonify({'error': 'Version does not belong to this article'}), 400
+
+    try:
+        patched_version = PatchedVersion(
+            workflow_run_id=data.get('workflow_id'),
+            content_id=article_id,
+            version_id=version_id,
+            ai_provider=data.get('ai_provider'),
+            ai_model=data.get('ai_model'),
+            patched_draft=patched_draft
+        )
+        db.session.add(patched_version)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'id': patched_version.id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create patched version: {str(e)}'}), 500

@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion
 from app.main import bp
 import requests
 
@@ -460,4 +460,47 @@ def trigger_audit(id):
         'success': True,
         'workflow_id': workflow_id,
         'message': 'Audit workflow started'
+    })
+
+
+@bp.route('/content/<int:id>/audit-data')
+@login_required
+def get_audit_data(id):
+    """Returns all audit and patched data for an article's versions."""
+    content = NewsContent.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get all version audits for this content
+    version_audits = VersionAudit.query.filter_by(content_id=id).order_by(VersionAudit.created_at.desc()).all()
+
+    # Get all patched versions for this content
+    patched_versions = PatchedVersion.query.filter_by(content_id=id).order_by(PatchedVersion.created_at.desc()).all()
+
+    return jsonify({
+        'version_audits': [
+            {
+                'id': va.id,
+                'version_id': va.version_id,
+                'ai_provider': va.ai_provider,
+                'ai_model': va.ai_model,
+                'overall_risk': va.overall_risk,
+                'original_draft': va.original_draft,
+                'issues': va.issues,
+                'created_at': va.created_at.isoformat() if va.created_at else None
+            }
+            for va in version_audits
+        ],
+        'patched_versions': [
+            {
+                'id': pv.id,
+                'version_id': pv.version_id,
+                'ai_provider': pv.ai_provider,
+                'ai_model': pv.ai_model,
+                'patched_draft': pv.patched_draft,
+                'created_at': pv.created_at.isoformat() if pv.created_at else None
+            }
+            for pv in patched_versions
+        ]
     })

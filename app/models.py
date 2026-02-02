@@ -217,6 +217,52 @@ class WorkflowRun(db.Model):
         return f'<WorkflowRun {self.id} ({self.status})>'
 
 
+class VersionAudit(db.Model):
+    """Stores audit bot findings for a specific article version."""
+    id = db.Column(db.Integer, primary_key=True)
+    workflow_run_id = db.Column(db.String(36), db.ForeignKey('workflow_run.id'), index=True)
+    content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False, index=True)
+    version_id = db.Column(db.Integer, db.ForeignKey('content_version.id'), nullable=False, index=True)
+
+    # Audit metadata
+    ai_provider = db.Column(db.String(32))
+    ai_model = db.Column(db.String(64))
+    overall_risk = db.Column(db.String(32))  # 'low', 'medium', 'high'
+    original_draft = db.Column(db.Text)  # Original text that was audited
+
+    # Issues found (JSON array)
+    issues = db.Column(db.JSON, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    workflow_run = db.relationship('WorkflowRun', backref='version_audits')
+    news_content = db.relationship('NewsContent', backref='version_audits')
+    version = db.relationship('ContentVersion', backref='audits')
+
+
+class PatchedVersion(db.Model):
+    """Stores editor bot patched draft for a specific article version."""
+    id = db.Column(db.Integer, primary_key=True)
+    workflow_run_id = db.Column(db.String(36), db.ForeignKey('workflow_run.id'), index=True)
+    content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False, index=True)
+    version_id = db.Column(db.Integer, db.ForeignKey('content_version.id'), nullable=False, index=True)
+
+    # Editor bot metadata
+    ai_provider = db.Column(db.String(32))
+    ai_model = db.Column(db.String(64))
+
+    # Patched content
+    patched_draft = db.Column(db.Text, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    workflow_run = db.relationship('WorkflowRun', backref='patched_versions')
+    news_content = db.relationship('NewsContent', backref='patched_versions')
+    version = db.relationship('ContentVersion', backref='patched_versions')
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
