@@ -673,6 +673,9 @@ def create_version_audit():
 
     data = request.get_json(force=True, silent=True) or {}
 
+    # Debug logging
+    current_app.logger.info(f"version-audit received type: {type(data).__name__}, keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
+
     # Handle double-stringified JSON (common with n8n workflows)
     if isinstance(data, str):
         try:
