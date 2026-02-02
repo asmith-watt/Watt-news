@@ -810,7 +810,7 @@ function renderAuditData() {
             if (issueCount > 0) {
                 auditBadge.textContent = issueCount + ' issue' + (issueCount > 1 ? 's' : '');
                 auditBadge.classList.remove('hidden');
-                auditBadge.classList.add(getRiskBadgeClass(latestAudit.overall_risk));
+                getRiskBadgeClass(latestAudit.overall_risk).split(' ').forEach(cls => auditBadge.classList.add(cls));
             }
         }
 
