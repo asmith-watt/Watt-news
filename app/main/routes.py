@@ -81,16 +81,26 @@ def push_to_cms(id):
         return jsonify({'error': 'CMS configuration not set for this publication'}), 400
 
     try:
+        # Build props with available fields
+        # CMS API props: title, type, body, deck, excerpt, byline, creditOrSource, notes, slug
+        props = {
+            'title': content.title,
+            'type': 'News',
+            'body': content.content
+        }
+
+        # Add optional fields if they exist
+        if content.deck:
+            props['deck'] = content.deck
+        if content.teaser:
+            props['excerpt'] = content.teaser  # CMS calls it 'excerpt', not 'teaser'
+
         payload = {
             'command': {
                 'input': [
                     {
                         'form': 'POST',
-                        'props': {
-                            'title': content.title,
-                            'type': 'ARTICLE',
-                            'body': content.content
-                        }
+                        'props': props
                     }
                 ]
             },
@@ -150,16 +160,26 @@ def push_version_to_cms(id, version_id):
         return jsonify({'error': 'CMS configuration not set for this publication'}), 400
 
     try:
+        # Build props with available fields from version
+        # CMS API props: title, type, body, deck, excerpt, byline, creditOrSource, notes, slug
+        props = {
+            'title': content.title,
+            'type': 'News',
+            'body': version.content
+        }
+
+        # Add optional fields from version if they exist
+        if version.deck:
+            props['deck'] = version.deck
+        if version.teaser:
+            props['excerpt'] = version.teaser  # CMS calls it 'excerpt', not 'teaser'
+
         payload = {
             'command': {
                 'input': [
                     {
                         'form': 'POST',
-                        'props': {
-                            'title': content.title,
-                            'type': 'ARTICLE',
-                            'body': version.content
-                        }
+                        'props': props
                     }
                 ]
             },
