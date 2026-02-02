@@ -669,7 +669,30 @@ def create_version_audit():
       ]
     }
     """
+    import json as json_module
+
     data = request.get_json(force=True, silent=True) or {}
+
+    # Handle double-stringified JSON (common with n8n workflows)
+    if isinstance(data, str):
+        try:
+            data = json_module.loads(data)
+        except (json_module.JSONDecodeError, TypeError):
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+    # Also check if payload is wrapped in a common key
+    if isinstance(data, dict) and len(data) == 1:
+        for key in ['output', 'body', 'payload', 'data']:
+            if key in data and isinstance(data[key], (str, dict)):
+                inner = data[key]
+                if isinstance(inner, str):
+                    try:
+                        data = json_module.loads(inner)
+                    except (json_module.JSONDecodeError, TypeError):
+                        pass
+                elif isinstance(inner, dict):
+                    data = inner
+                break
 
     # Get required fields
     article_id = data.get('article_id')
@@ -743,7 +766,30 @@ def create_patched_version():
       "patched_draft": "Patched draft body text"
     }
     """
+    import json as json_module
+
     data = request.get_json(force=True, silent=True) or {}
+
+    # Handle double-stringified JSON (common with n8n workflows)
+    if isinstance(data, str):
+        try:
+            data = json_module.loads(data)
+        except (json_module.JSONDecodeError, TypeError):
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+    # Also check if payload is wrapped in a common key
+    if isinstance(data, dict) and len(data) == 1:
+        for key in ['output', 'body', 'payload', 'data']:
+            if key in data and isinstance(data[key], (str, dict)):
+                inner = data[key]
+                if isinstance(inner, str):
+                    try:
+                        data = json_module.loads(inner)
+                    except (json_module.JSONDecodeError, TypeError):
+                        pass
+                elif isinstance(inner, dict):
+                    data = inner
+                break
 
     # Get required fields
     article_id = data.get('article_id')
