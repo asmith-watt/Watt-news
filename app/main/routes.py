@@ -85,7 +85,7 @@ def push_to_cms(id):
         # CMS API props: title, type, body, deck, excerpt, byline, creditOrSource, notes, slug
         props = {
             'title': content.title,
-            'type': 'News',
+            'type': 'NEWS',
             'body': content.content
         }
 
@@ -119,7 +119,22 @@ def push_to_cms(id):
         }
 
         response = requests.post(publication.cms_url, json=payload, headers=headers, timeout=30)
-        response.raise_for_status()
+
+        # Check for errors and return the actual API error message
+        if not response.ok:
+            try:
+                error_detail = response.json()
+            except Exception:
+                error_detail = response.text
+            # Include detail in error message so it shows in UI alert
+            error_msg = f'CMS API error ({response.status_code}): {error_detail}'
+            current_app.logger.error(f'CMS push failed: {error_msg}')
+            current_app.logger.error(f'Payload sent: {payload}')
+            return jsonify({
+                'error': error_msg,
+                'detail': error_detail,
+                'payload_sent': payload
+            }), 500  # Return 500 so our UI handles it
 
         cms_response = response.json()
         content.pushed_to_cms = True
@@ -133,7 +148,7 @@ def push_to_cms(id):
         return jsonify({'success': True, 'message': 'Content pushed to CMS successfully', 'cms_id': content.cms_id})
 
     except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Failed to push to CMS: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to push to CMS: {str(e)}', 'type': 'request_exception'}), 500
     except Exception as e:
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
@@ -164,7 +179,7 @@ def push_version_to_cms(id, version_id):
         # CMS API props: title, type, body, deck, excerpt, byline, creditOrSource, notes, slug
         props = {
             'title': content.title,
-            'type': 'News',
+            'type': 'NEWS',
             'body': version.content
         }
 
@@ -197,7 +212,22 @@ def push_version_to_cms(id, version_id):
         }
 
         response = requests.post(publication.cms_url, json=payload, headers=headers, timeout=30)
-        response.raise_for_status()
+
+        # Check for errors and return the actual API error message
+        if not response.ok:
+            try:
+                error_detail = response.json()
+            except Exception:
+                error_detail = response.text
+            # Include detail in error message so it shows in UI alert
+            error_msg = f'CMS API error ({response.status_code}): {error_detail}'
+            current_app.logger.error(f'CMS push failed: {error_msg}')
+            current_app.logger.error(f'Payload sent: {payload}')
+            return jsonify({
+                'error': error_msg,
+                'detail': error_detail,
+                'payload_sent': payload
+            }), 500  # Return 500 so our UI handles it
 
         cms_response = response.json()
         version.pushed_to_cms = True
@@ -218,7 +248,7 @@ def push_version_to_cms(id, version_id):
         })
 
     except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Failed to push to CMS: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to push to CMS: {str(e)}', 'type': 'request_exception'}), 500
     except Exception as e:
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 

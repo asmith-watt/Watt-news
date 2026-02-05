@@ -37,7 +37,7 @@ Articles are created as `POST` entities with form `POST` and type `News`.
         "form": "POST",
         "props": {
           "title": "Article Title",
-          "type": "News",
+          "type": "NEWS",
           "body": "Article body content...",
           "deck": "Short summary/subheadline",
           "excerpt": "Teaser text (what we call 'teaser' internally)"
@@ -68,7 +68,10 @@ Articles are created as `POST` entities with form `POST` and type `News`.
 | Prop | Required | Description |
 |------|----------|-------------|
 | `title` | **Yes** | Article headline |
-| `type` | **Yes** | Must be `"News"` for news articles |
+| `type` | **Yes** | Must be `"NEWS"` for news articles |
+
+**Valid `type` values (must be uppercase):**
+`ADVERTISEMENT`, `ARTICLE`, `BLOG`, `DOCUMENT`, `MEDIA_GALLERY`, `NEWS`, `PODCAST`, `PRESS_RELEASE`, `PROMOTION`, `TOP_LIST`, `VIDEO`, `WHITEPAPER`
 | `byline` | No | Author byline |
 | `creditOrSource` | No | Source attribution |
 
@@ -195,7 +198,7 @@ curl -X POST "https://api.mindfulcms.com/commands/post/create" \
           "form": "POST",
           "props": {
             "title": "Test Article",
-            "type": "News",
+            "type": "NEWS",
             "body": "Article content here...",
             "deck": "A brief summary",
             "excerpt": "Teaser text for listings"
