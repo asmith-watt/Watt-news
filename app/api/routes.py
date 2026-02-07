@@ -1,6 +1,6 @@
 from flask import request, jsonify, current_app, g
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 from app import db
 from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion
 from app.api import bp
@@ -842,3 +842,75 @@ def create_patched_version():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create patched version: {str(e)}'}), 500
+
+
+@bp.route('/recent-articles', methods=['GET'])
+@require_api_key
+def get_recent_articles():
+    """
+    Returns recently created article titles and sources for duplicate detection.
+    Used by n8n to filter out articles that have already been created.
+
+    Query parameters:
+    - publication_id (optional): Filter by publication
+    - days (optional): Number of days to look back (default: 7)
+
+    Response:
+    {
+      "articles": [
+        {
+          "id": 123,
+          "title": "Article Title",
+          "source_url": "https://...",
+          "source_name": "Source Name",
+          "created_at": "2026-02-01T10:00:00"
+        }
+      ],
+      "count": 1,
+      "days": 7
+    }
+    """
+    # Get query parameters
+    publication_id = request.args.get('publication_id', type=int)
+    days = request.args.get('days', default=7, type=int)
+
+    # Limit days to reasonable range
+    if days < 1:
+        days = 1
+    elif days > 30:
+        days = 30
+
+    # Calculate cutoff date
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    # Build query
+    query = NewsContent.query.filter(NewsContent.created_at >= cutoff_date)
+
+    # Filter by publication if specified
+    if publication_id:
+        # Validate API key has access to this publication
+        is_valid, error_response = validate_publication_access(publication_id)
+        if not is_valid:
+            return error_response
+        query = query.filter_by(publication_id=publication_id)
+    elif g.get('authenticated_publication'):
+        # If using publication-specific API key, only return that publication's articles
+        query = query.filter_by(publication_id=g.authenticated_publication.id)
+
+    # Order by most recent first
+    articles = query.order_by(NewsContent.created_at.desc()).all()
+
+    return jsonify({
+        'articles': [
+            {
+                'id': article.id,
+                'title': article.title,
+                'source_url': article.source_url,
+                'source_name': article.source_name,
+                'created_at': article.created_at.isoformat() if article.created_at else None
+            }
+            for article in articles
+        ],
+        'count': len(articles),
+        'days': days
+    })
