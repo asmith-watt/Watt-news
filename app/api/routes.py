@@ -851,8 +851,11 @@ def get_recent_articles():
     Returns recently created article titles and sources for duplicate detection.
     Used by n8n to filter out articles that have already been created.
 
+    Headers:
+    - X-Publication-Id (optional): Filter by publication ID
+
     Query parameters:
-    - publication_id (optional): Filter by publication
+    - publication_id (optional): Filter by publication (alternative to header)
     - days (optional): Number of days to look back (default: 7)
 
     Response:
@@ -870,8 +873,11 @@ def get_recent_articles():
       "days": 7
     }
     """
-    # Get query parameters
-    publication_id = request.args.get('publication_id', type=int)
+    # Get publication_id from header first, fall back to query parameter
+    publication_id = request.headers.get('X-Publication-Id', type=int)
+    if publication_id is None:
+        publication_id = request.args.get('publication_id', type=int)
+
     days = request.args.get('days', default=7, type=int)
 
     # Limit days to reasonable range
