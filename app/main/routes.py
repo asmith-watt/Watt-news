@@ -291,12 +291,11 @@ def update_status(id):
 
     content.status = new_status
 
-    # Handle rejection reason
-    if new_status == 'rejected':
-        rejection_reason = request.json.get('rejection_reason', '').strip()
-        content.rejection_reason = rejection_reason if rejection_reason else None
-    elif new_status != 'rejected':
-        # Clear rejection reason when status changes away from rejected
+    # Handle rejection/approval reason
+    if new_status in ['rejected', 'approved']:
+        reason = request.json.get('rejection_reason', '').strip()
+        content.rejection_reason = reason if reason else None
+    else:
         content.rejection_reason = None
 
     db.session.commit()
