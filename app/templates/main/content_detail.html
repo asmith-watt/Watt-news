@@ -53,6 +53,18 @@
         </div>
 
         <div class="px-6 py-4">
+            {% if content.status == 'rejected' and content.rejection_reason %}
+            <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded">
+                <h3 class="font-bold text-red-700 mb-2">Rejection Reason</h3>
+                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
+            </div>
+            {% elif content.status == 'approved' and content.rejection_reason %}
+            <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded">
+                <h3 class="font-bold text-green-700 mb-2">Approval Reason</h3>
+                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
+            </div>
+            {% endif %}
+
             <!-- Image Section (shared across all versions) -->
             <div id="imageSection" class="mb-4">
                 {% if content.image_thumbnail or content.image_url %}
@@ -318,18 +330,6 @@
                     </div>
                     {% endfor %}
                 </div>
-            </div>
-            {% endif %}
-
-            {% if content.status == 'rejected' and content.rejection_reason %}
-            <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded">
-                <h3 class="font-bold text-red-700 mb-2">Rejection Reason</h3>
-                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
-            </div>
-            {% elif content.status == 'approved' and content.rejection_reason %}
-            <div class="mt-4 p-4 bg-green-50 border border-green-200 rounded">
-                <h3 class="font-bold text-green-700 mb-2">Approval Reason</h3>
-                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
             </div>
             {% endif %}
 
