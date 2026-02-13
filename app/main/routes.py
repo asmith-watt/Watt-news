@@ -357,6 +357,66 @@ def trigger_content_workflow(id):
     return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id))
 
 
+@bp.route('/publication/<int:id>/submit-url-workflow', methods=['POST'])
+@login_required
+def submit_url_workflow(id):
+    publication = Publication.query.get_or_404(id)
+
+    # Check access
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        flash('Access denied', 'error')
+        return redirect(url_for('main.dashboard'))
+
+    source_url = request.form.get('source_url', '').strip()
+    if not source_url or not source_url.startswith(('http://', 'https://')):
+        flash('Please enter a valid URL starting with http:// or https://', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    workflow_url = current_app.config.get('N8N_SUBMIT_URL_WORKFLOW_URL')
+    if not workflow_url:
+        flash('Submit URL workflow is not configured. Set N8N_SUBMIT_URL_WORKFLOW_URL environment variable.', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    # Create workflow run record
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=publication.id,
+        triggered_by_id=current_user.id,
+        workflow_type='submit_url',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    try:
+        requests.post(
+            workflow_url,
+            json={
+                'publication_id': publication.id,
+                'workflow_id': workflow_id,
+                'source_url': source_url
+            },
+            headers={'Content-Type': 'application/json'},
+            timeout=5
+        )
+    except requests.exceptions.Timeout:
+        # Expected for async workflows
+        pass
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
+        flash(f'Failed to trigger workflow: {str(e)}', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    # Update status to running
+    workflow_run.status = 'running'
+    db.session.commit()
+
+    return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id, workflow_type='submit_url'))
+
+
 @bp.route('/content/<int:id>/generate-image', methods=['POST'])
 @login_required
 def generate_image(id):

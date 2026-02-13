@@ -4,13 +4,24 @@
 <div class="mb-6 flex justify-between items-center">
     <h1 class="text-3xl font-bold text-gray-800">News Dashboard</h1>
     {% if current_publication %}
-    <form method="POST" action="{{ url_for('main.trigger_content_workflow', id=current_publication.id) }}"
-          class="inline"
-          onsubmit="return confirm('Trigger content generation workflow for {{ current_publication.name }}?');">
-        <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            Generate Content
-        </button>
-    </form>
+    <div class="flex items-center space-x-3">
+        <form method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}"
+              class="flex items-center space-x-2"
+              onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate articles from this URL for {{ current_publication.name }}?');">
+            <input type="url" name="source_url" required placeholder="https://example.com/article"
+                   class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
+                Submit URL
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('main.trigger_content_workflow', id=current_publication.id) }}"
+              class="inline"
+              onsubmit="return confirm('Trigger content generation workflow for {{ current_publication.name }}?');">
+            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                Generate Content
+            </button>
+        </form>
+    </div>
     {% endif %}
 </div>
 
@@ -175,7 +186,7 @@ function dismissWorkflowStatus() {
     window.history.replaceState({}, '', url);
 }
 
-function pollWorkflowStatus(workflowId) {
+function pollWorkflowStatus(workflowId, runningMsg) {
     fetch(`/api/workflow/${workflowId}/status`)
         .then(response => response.json())
         .then(data => {
@@ -186,14 +197,15 @@ function pollWorkflowStatus(workflowId) {
             }
 
             if (data.status === 'running' || data.status === 'pending') {
-                showWorkflowStatus(data.status, 'Content generation workflow is running...');
+                showWorkflowStatus(data.status, runningMsg);
             } else if (data.status === 'completed') {
                 showWorkflowStatus('completed', data.message || 'Workflow completed successfully!');
                 clearInterval(workflowPollInterval);
-                // Remove workflow_id from URL and refresh to show new content
+                // Remove workflow_id and workflow_type from URL and refresh to show new content
                 setTimeout(() => {
                     const url = new URL(window.location);
                     url.searchParams.delete('workflow_id');
+                    url.searchParams.delete('workflow_type');
                     window.location.href = url.toString();
                 }, 2000);
             } else if (data.status === 'failed') {
@@ -211,10 +223,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const workflowId = getUrlParam('workflow_id');
     if (workflowId) {
         currentWorkflowId = workflowId;
-        showWorkflowStatus('running', 'Content generation workflow is running...');
+        const workflowType = getUrlParam('workflow_type');
+        const runningMsg = workflowType === 'submit_url'
+            ? 'Article-from-URL workflow is running...'
+            : 'Content generation workflow is running...';
+        showWorkflowStatus('running', runningMsg);
         // Poll every 3 seconds
-        pollWorkflowStatus(workflowId);
-        workflowPollInterval = setInterval(() => pollWorkflowStatus(workflowId), 3000);
+        pollWorkflowStatus(workflowId, runningMsg);
+        workflowPollInterval = setInterval(() => pollWorkflowStatus(workflowId, runningMsg), 3000);
     }
 });
 </script>
