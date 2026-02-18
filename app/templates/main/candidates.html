@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-gray-800">Candidate Articles</h1>
+    {% if current_publication %}
+    <form method="POST" action="{{ url_for('main.trigger_research', id=current_publication.id) }}"
+          class="inline"
+          onsubmit="return confirm('Run research for {{ current_publication.name }}? This may take a minute.');">
+        <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            Run Research
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="mb-6 flex justify-between items-center">
+    <div class="flex items-center space-x-4">
+        <label for="publication-select" class="text-sm font-medium text-gray-700">Publication:</label>
+        <select id="publication-select"
+                onchange="window.location.href=this.value"
+                class="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            {% for pub in publications %}
+            <option value="{{ url_for('main.candidates', publication_id=pub.id, status=status) }}"
+                    {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
+                {{ pub.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if current_publication and current_publication.last_research_run %}
+    <span class="text-sm text-gray-500">
+        Last research: {{ current_publication.last_research_run.strftime('%Y-%m-%d %H:%M') }} UTC
+    </span>
+    {% endif %}
+</div>
+
+<div class="mb-6 flex space-x-2">
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='all') }}"
+       class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        All
+    </a>
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='new') }}"
+       class="px-4 py-2 rounded {% if status == 'new' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        New
+    </a>
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='selected') }}"
+       class="px-4 py-2 rounded {% if status == 'selected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Selected
+    </a>
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='rejected') }}"
+       class="px-4 py-2 rounded {% if status == 'rejected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Rejected
+    </a>
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='processed') }}"
+       class="px-4 py-2 rounded {% if status == 'processed' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+        Processed
+    </a>
+</div>
+
+<div class="bg-white shadow-md rounded-lg overflow-hidden">
+    {% if candidates.items %}
+    <table class="min-w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Published</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discovered</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for item in candidates.items %}
+            <tr class="hover:bg-gray-50" id="candidate-row-{{ item.id }}">
+                <td class="px-4 py-4">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        {% if item.relevance_score >= 70 %}bg-green-100 text-green-800
+                        {% elif item.relevance_score >= 40 %}bg-yellow-100 text-yellow-800
+                        {% else %}bg-red-100 text-red-800{% endif %}"
+                        title="Keyword: {{ item.keyword_score }} | Recency: {{ item.recency_score }} | Source: {{ item.source_weight }}">
+                        {{ "%.0f"|format(item.relevance_score) }}
+                    </span>
+                </td>
+                <td class="px-4 py-4">
+                    <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
+                       class="text-blue-600 hover:underline">
+                        {{ item.title[:80] if item.title else item.url[:80] }}{% if (item.title and item.title|length > 80) or (not item.title and item.url|length > 80) %}...{% endif %}
+                    </a>
+                    {% if item.snippet %}
+                    <p class="text-xs text-gray-400 mt-1 truncate max-w-md">{{ item.snippet[:120] }}{% if item.snippet|length > 120 %}...{% endif %}</p>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-4 text-sm text-gray-500">
+                    {{ item.news_source.name if item.news_source else 'N/A' }}
+                </td>
+                <td class="px-4 py-4 text-sm text-gray-500">
+                    {{ item.published_date.strftime('%Y-%m-%d') if item.published_date else '-' }}
+                </td>
+                <td class="px-4 py-4 text-sm text-gray-500">
+                    {{ item.discovered_at.strftime('%Y-%m-%d %H:%M') if item.discovered_at else '-' }}
+                </td>
+                <td class="px-4 py-4">
+                    <span id="status-badge-{{ item.id }}" class="px-2 py-1 text-xs rounded-full
+                        {% if item.status == 'new' %}bg-blue-100 text-blue-800
+                        {% elif item.status == 'selected' %}bg-green-100 text-green-800
+                        {% elif item.status == 'rejected' %}bg-red-100 text-red-800
+                        {% elif item.status == 'processed' %}bg-purple-100 text-purple-800
+                        {% endif %}">
+                        {{ item.status }}
+                    </span>
+                </td>
+                <td class="px-4 py-4 text-sm space-x-1">
+                    {% if item.status in ('new', 'rejected') %}
+                    <button onclick="updateCandidateStatus({{ item.id }}, 'selected')"
+                            class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">
+                        Select
+                    </button>
+                    {% endif %}
+                    {% if item.status in ('new', 'selected') %}
+                    <button onclick="updateCandidateStatus({{ item.id }}, 'rejected')"
+                            class="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
+                        Reject
+                    </button>
+                    {% endif %}
+                    {% if item.status in ('selected', 'rejected') %}
+                    <button onclick="updateCandidateStatus({{ item.id }}, 'new')"
+                            class="px-2 py-1 text-xs bg-gray-400 text-white rounded hover:bg-gray-500">
+                        Reset
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="px-6 py-4 bg-gray-50 border-t">
+        <div class="flex justify-between items-center">
+            <div class="text-sm text-gray-600">
+                Showing {{ candidates.items|length }} of {{ candidates.total }} candidates
+            </div>
+            <div class="flex space-x-2">
+                {% if candidates.has_prev %}
+                <a href="{{ url_for('main.candidates', page=candidates.prev_num, status=status, publication_id=current_publication.id if current_publication else None) }}"
+                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Previous</a>
+                {% endif %}
+                {% if candidates.has_next %}
+                <a href="{{ url_for('main.candidates', page=candidates.next_num, status=status, publication_id=current_publication.id if current_publication else None) }}"
+                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Next</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="px-6 py-12 text-center text-gray-500">
+        No candidate articles found.
+        {% if current_publication %}
+        <br><span class="text-sm">Try running research or changing the status filter.</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function updateCandidateStatus(candidateId, newStatus) {
+    fetch(`/candidate/${candidateId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update badge
+            const badge = document.getElementById(`status-badge-${candidateId}`);
+            badge.textContent = data.status;
+            badge.className = 'px-2 py-1 text-xs rounded-full ';
+            if (data.status === 'new') badge.className += 'bg-blue-100 text-blue-800';
+            else if (data.status === 'selected') badge.className += 'bg-green-100 text-green-800';
+            else if (data.status === 'rejected') badge.className += 'bg-red-100 text-red-800';
+            else if (data.status === 'processed') badge.className += 'bg-purple-100 text-purple-800';
+
+            // Reload to update action buttons
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating status: ' + error);
+    });
+}
+</script>
+{% endblock %}
