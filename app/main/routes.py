@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle
 from app.main import bp
 import requests
 
@@ -613,3 +613,83 @@ def get_audit_data(id):
             for pv in patched_versions
         ]
     })
+
+
+@bp.route('/candidates')
+@login_required
+def candidates():
+    """Paginated list of candidate articles with filters."""
+    page = request.args.get('page', 1, type=int)
+    status = request.args.get('status', 'new')
+    publication_id = request.args.get('publication_id', type=int)
+    min_score = request.args.get('min_score', 0, type=float)
+
+    # Get available publications for the user
+    if current_user.has_role('admin'):
+        publications = Publication.query.filter_by(is_active=True).order_by(Publication.id).all()
+    else:
+        publications = [p for p in current_user.publications if p.is_active]
+
+    # Default to first publication if none selected
+    if not publication_id and publications:
+        publication_id = publications[0].id
+
+    current_publication = Publication.query.get(publication_id) if publication_id else None
+
+    query = CandidateArticle.query
+
+    if publication_id:
+        query = query.filter_by(publication_id=publication_id)
+    elif not current_user.has_role('admin') and current_user.publications:
+        pub_ids = current_user.get_publication_ids()
+        query = query.filter(CandidateArticle.publication_id.in_(pub_ids))
+
+    if status != 'all':
+        query = query.filter_by(status=status)
+
+    if min_score > 0:
+        query = query.filter(CandidateArticle.relevance_score >= min_score)
+
+    candidates_page = query.order_by(CandidateArticle.relevance_score.desc()).paginate(
+        page=page, per_page=current_app.config['ITEMS_PER_PAGE'], error_out=False
+    )
+
+    return render_template('main/candidates.html', title='Candidate Articles',
+                           candidates=candidates_page, status=status, min_score=min_score,
+                           publications=publications, current_publication=current_publication)
+
+
+@bp.route('/publication/<int:id>/trigger-research', methods=['POST'])
+@login_required
+def trigger_research(id):
+    """Trigger research task from UI."""
+    publication = Publication.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        flash('Access denied', 'error')
+        return redirect(url_for('main.candidates'))
+
+    from app.tasks import research_publication_sources
+    research_publication_sources.delay(publication.id)
+
+    flash(f'Research triggered for {publication.name}. New candidates will appear shortly.', 'success')
+    return redirect(url_for('main.candidates', publication_id=id))
+
+
+@bp.route('/candidate/<int:id>/status', methods=['POST'])
+@login_required
+def update_candidate_status(id):
+    """AJAX status update for a candidate (select/reject)."""
+    candidate = CandidateArticle.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(candidate.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    new_status = request.json.get('status')
+    if new_status not in ('selected', 'rejected', 'new'):
+        return jsonify({'error': 'Invalid status'}), 400
+
+    candidate.status = new_status
+    db.session.commit()
+
+    return jsonify({'success': True, 'status': candidate.status})

@@ -22,6 +22,21 @@ class SourceType(Enum):
         return [choice.value for choice in cls]
 
 
+class CandidateStatus(Enum):
+    NEW = "new"
+    SELECTED = "selected"
+    REJECTED = "rejected"
+    PROCESSED = "processed"
+
+    @classmethod
+    def choices(cls):
+        return [(choice.value, choice.value) for choice in cls]
+
+    @classmethod
+    def values(cls):
+        return [choice.value for choice in cls]
+
+
 user_roles = db.Table('user_roles',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True)
@@ -94,8 +109,13 @@ class Publication(db.Model):
     last_scheduled_run = db.Column(db.DateTime)
     next_scheduled_run = db.Column(db.DateTime, index=True)
 
+    # Research fields
+    last_research_run = db.Column(db.DateTime, nullable=True)
+    require_candidate_review = db.Column(db.Boolean, default=False)
+
     news_sources = db.relationship('NewsSource', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     news_content = db.relationship('NewsContent', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
+    candidate_articles = db.relationship('CandidateArticle', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<Publication {self.name}>'
@@ -261,6 +281,43 @@ class PatchedVersion(db.Model):
     workflow_run = db.relationship('WorkflowRun', backref='patched_versions')
     news_content = db.relationship('NewsContent', backref='patched_versions')
     version = db.relationship('ContentVersion', backref='patched_versions')
+
+
+class CandidateArticle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    news_source_id = db.Column(db.Integer, db.ForeignKey('news_source.id'), nullable=True, index=True)
+    url = db.Column(db.String(1024), nullable=False)
+    url_hash = db.Column(db.String(64), nullable=False, index=True)
+    title = db.Column(db.String(512), nullable=True)
+    snippet = db.Column(db.Text, nullable=True)
+    author = db.Column(db.String(256), nullable=True)
+    published_date = db.Column(db.DateTime, nullable=True)
+
+    # Scoring
+    relevance_score = db.Column(db.Float, default=0, index=True)
+    keyword_score = db.Column(db.Float, default=0)
+    recency_score = db.Column(db.Float, default=0)
+    source_weight = db.Column(db.Float, default=0)
+
+    status = db.Column(db.String(32), default='new', index=True)
+    extra_metadata = db.Column('metadata', db.JSON, nullable=True)
+
+    # Link to generated article
+    news_content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=True)
+
+    discovered_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('publication_id', 'url_hash', name='uq_candidate_pub_url'),
+    )
+
+    news_source = db.relationship('NewsSource', backref='candidate_articles')
+    news_content = db.relationship('NewsContent', backref='candidate_article')
+
+    def __repr__(self):
+        return f'<CandidateArticle {self.title[:50] if self.title else self.url[:50]}>'
 
 
 @login_manager.user_loader

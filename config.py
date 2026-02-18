@@ -22,6 +22,11 @@ class Config:
     CMS_API_URL = os.environ.get('CMS_API_URL')
     CMS_API_KEY = os.environ.get('CMS_API_KEY')
 
+    # Research / Scraping
+    FIRECRAWL_API_KEY = os.environ.get('FIRECRAWL_API_KEY')
+    SERPAPI_API_KEY = os.environ.get('SERPAPI_API_KEY')
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+
     # n8n Workflow Triggers
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')

@@ -55,6 +55,142 @@
                 <p class="text-gray-500 text-sm mt-1">For Keyword Search sources: enter keywords comma-separated (e.g., "AI, machine learning, automation")</p>
             </div>
 
+            <div class="mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    {{ form.config_json.label(class="block text-gray-700 font-bold") }}
+                    <button type="button" onclick="document.getElementById('config-docs').classList.toggle('hidden')"
+                            class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                        Show/Hide Documentation
+                    </button>
+                </div>
+
+                <!-- Inline documentation panel -->
+                <div id="config-docs" class="hidden mb-4 border border-blue-200 bg-blue-50 rounded-lg p-4 text-sm">
+                    <h3 class="font-bold text-blue-900 mb-2">Data Source Configuration Reference</h3>
+                    <p class="text-gray-700 mb-3">Required for <strong>Data</strong> source type. The JSON config tells the scraper how to find PDF reports and analyze them with Claude.</p>
+
+                    <h4 class="font-semibold text-blue-800 mt-3 mb-1">Required Fields</h4>
+                    <table class="w-full text-left text-xs border-collapse mb-3">
+                        <thead>
+                            <tr class="border-b border-blue-200">
+                                <th class="py-1 pr-2 text-blue-900">Field</th>
+                                <th class="py-1 pr-2 text-blue-900">Type</th>
+                                <th class="py-1 text-blue-900">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-700">
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">discovery_mode</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1"><code class="bg-blue-100 px-1 rounded">url_pattern</code> or <code class="bg-blue-100 px-1 rounded">landing_page</code></td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">document_type</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1"><code class="bg-blue-100 px-1 rounded">pdf</code> (only supported type)</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">report_name</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1">Human-readable name (e.g. "WASDE")</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">publisher</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1">Organization name (e.g. "USDA")</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">cadence</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1"><code class="bg-blue-100 px-1 rounded">monthly</code>, weekly, quarterly</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">analysis_prompt</td>
+                                <td class="py-1 pr-2">string</td>
+                                <td class="py-1">Full Claude prompt for analyzing the report</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h4 class="font-semibold text-blue-800 mt-3 mb-1">Mode-Specific Fields</h4>
+                    <table class="w-full text-left text-xs border-collapse mb-3">
+                        <thead>
+                            <tr class="border-b border-blue-200">
+                                <th class="py-1 pr-2 text-blue-900">Field</th>
+                                <th class="py-1 pr-2 text-blue-900">When Required</th>
+                                <th class="py-1 text-blue-900">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-700">
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">url_pattern</td>
+                                <td class="py-1 pr-2">url_pattern mode</td>
+                                <td class="py-1">URL with <code class="bg-blue-100 px-1 rounded">{MMYY}</code> placeholder (e.g. <code class="bg-blue-100 px-1 rounded text-xs">https://example.gov/report{MMYY}.pdf</code>)</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">landing_page_url</td>
+                                <td class="py-1 pr-2">landing_page mode</td>
+                                <td class="py-1">URL to scrape for PDF links (falls back to source URL)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h4 class="font-semibold text-blue-800 mt-3 mb-1">Optional Fields</h4>
+                    <table class="w-full text-left text-xs border-collapse mb-3">
+                        <thead>
+                            <tr class="border-b border-blue-200">
+                                <th class="py-1 pr-2 text-blue-900">Field</th>
+                                <th class="py-1 pr-2 text-blue-900">Default</th>
+                                <th class="py-1 text-blue-900">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-700">
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">lookback_months</td>
+                                <td class="py-1 pr-2">2</td>
+                                <td class="py-1">How many past months to check for reports</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">max_angles</td>
+                                <td class="py-1 pr-2">5</td>
+                                <td class="py-1">Maximum story angles Claude should return</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">claude_model</td>
+                                <td class="py-1 pr-2 text-xs">claude-sonnet-4-20250514</td>
+                                <td class="py-1">Anthropic model to use for analysis</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">previous_report_data</td>
+                                <td class="py-1 pr-2">null</td>
+                                <td class="py-1">Auto-populated after each run for month-over-month context</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h4 class="font-semibold text-blue-800 mt-3 mb-1">Example Configuration</h4>
+                    <pre class="bg-white border border-blue-200 rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre">{
+  "discovery_mode": "url_pattern",
+  "url_pattern": "https://www.usda.gov/oce/commodity/wasde/wasde{MMYY}.pdf",
+  "document_type": "pdf",
+  "report_name": "WASDE",
+  "publisher": "USDA",
+  "cadence": "monthly",
+  "lookback_months": 2,
+  "analysis_prompt": "You are a senior agricultural commodities analyst. Analyze this USDA WASDE report and identify the most newsworthy story angles for agricultural trade publication readers.",
+  "max_angles": 5
+}</pre>
+                </div>
+
+                {{ form.config_json(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm", rows="12") }}
+                {% if form.config_json.errors %}
+                    {% for error in form.config_json.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+                <p class="text-gray-500 text-sm mt-1">For Data sources: JSON configuration for the scraper (report URL pattern, analysis prompt, etc.)</p>
+            </div>
+
             <div class="mb-6">
                 <label class="flex items-center">
                     {{ form.is_active(class="mr-2") }}

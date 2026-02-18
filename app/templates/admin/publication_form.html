@@ -122,6 +122,25 @@
                 </label>
             </div>
 
+            <!-- Research Section -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Candidate Research</h3>
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        {{ form.require_candidate_review(class="mr-2") }}
+                        <span class="text-gray-700 font-bold">{{ form.require_candidate_review.label.text }}</span>
+                    </label>
+                    <p class="text-gray-500 text-sm mt-1">When enabled, editors must manually select candidates before n8n picks them up. When disabled, n8n auto-pulls top-scored new candidates.</p>
+                </div>
+                {% if publication and publication.last_research_run %}
+                <div class="p-3 bg-blue-50 rounded border border-blue-200">
+                    <p class="text-sm text-blue-800">
+                        <strong>Last research run:</strong> {{ publication.last_research_run.strftime('%Y-%m-%d %H:%M') }} UTC
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+
             <!-- Scheduling Section -->
             <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <h3 class="text-lg font-bold text-gray-800 mb-4">Content Generation Schedule</h3>

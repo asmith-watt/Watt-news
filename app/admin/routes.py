@@ -1,6 +1,7 @@
 from flask import render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
+import json
 import secrets
 import requests
 from app import db
@@ -56,6 +57,8 @@ def new_publication():
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
             is_active=form.is_active.data,
+            # Research fields
+            require_candidate_review=form.require_candidate_review.data,
             # Scheduling fields
             schedule_enabled=form.schedule_enabled.data,
             schedule_frequency=form.schedule_frequency.data or None,
@@ -95,6 +98,9 @@ def edit_publication(id):
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data
+
+        # Research fields
+        publication.require_candidate_review = form.require_candidate_review.data
 
         # Scheduling fields
         publication.schedule_enabled = form.schedule_enabled.data
@@ -154,12 +160,21 @@ def new_news_source(pub_id):
     form = NewsSourceForm()
 
     if form.validate_on_submit():
+        config = None
+        if form.config_json.data and form.config_json.data.strip():
+            try:
+                config = json.loads(form.config_json.data)
+            except json.JSONDecodeError as e:
+                flash(f'Invalid JSON in configuration: {e}', 'error')
+                return render_template('admin/news_source_form.html', title='New News Source', form=form, publication=publication)
+
         source = NewsSource(
             publication_id=pub_id,
             name=form.name.data,
             source_type=form.source_type.data,
             url=form.url.data,
             keywords=form.keywords.data,
+            config=config,
             is_active=form.is_active.data
         )
         db.session.add(source)
@@ -183,11 +198,25 @@ def edit_news_source(pub_id, id):
 
     form = NewsSourceForm(obj=source)
 
+    if request.method == 'GET' and source.config:
+        form.config_json.data = json.dumps(source.config, indent=2)
+
     if form.validate_on_submit():
+        config = source.config
+        if form.config_json.data and form.config_json.data.strip():
+            try:
+                config = json.loads(form.config_json.data)
+            except json.JSONDecodeError as e:
+                flash(f'Invalid JSON in configuration: {e}', 'error')
+                return render_template('admin/news_source_form.html', title='Edit News Source', form=form, publication=publication, source=source)
+        elif not form.config_json.data or not form.config_json.data.strip():
+            config = None
+
         source.name = form.name.data
         source.source_type = form.source_type.data
         source.url = form.url.data
         source.keywords = form.keywords.data
+        source.config = config
         source.is_active = form.is_active.data
         db.session.commit()
         flash('News source updated successfully!', 'success')
@@ -345,4 +374,17 @@ def trigger_content_workflow(id):
         return redirect(url_for('admin.publications'))
 
     flash(f'Content generation workflow triggered for {publication.name}!', 'success')
+    return redirect(url_for('admin.publications'))
+
+
+@bp.route('/publications/<int:id>/trigger-research', methods=['POST'])
+@login_required
+@admin_required
+def trigger_research(id):
+    publication = Publication.query.get_or_404(id)
+
+    from app.tasks import research_publication_sources
+    research_publication_sources.delay(publication.id)
+
+    flash(f'Research triggered for {publication.name}!', 'success')
     return redirect(url_for('admin.publications'))
