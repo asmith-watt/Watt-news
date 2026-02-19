@@ -41,5 +41,15 @@ class Config:
     CELERY_BROKER_URL = _redis_url
     CELERY_RESULT_BACKEND = _redis_url
 
+    # Enrichment
+    ENRICHMENT_MIN_SCORE = float(os.environ.get('ENRICHMENT_MIN_SCORE', 25.0))
+    ENRICHMENT_MAX_PER_RUN = int(os.environ.get('ENRICHMENT_MAX_PER_RUN', 50))
+
+    # LLM Triage
+    TRIAGE_ENABLED = os.environ.get('TRIAGE_ENABLED', 'true').lower() == 'true'
+    TRIAGE_MODEL = os.environ.get('TRIAGE_MODEL', 'claude-haiku-4-5-20251001')
+    TRIAGE_MAX_BATCH_SIZE = int(os.environ.get('TRIAGE_MAX_BATCH_SIZE', 40))
+    TRIAGE_FETCH_BUDGET = int(os.environ.get('TRIAGE_FETCH_BUDGET', 5))
+
     # Pagination
     ITEMS_PER_PAGE = 20

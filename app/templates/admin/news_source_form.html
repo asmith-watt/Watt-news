@@ -82,7 +82,7 @@
                             <tr class="border-b border-blue-100">
                                 <td class="py-1 pr-2 font-mono">discovery_mode</td>
                                 <td class="py-1 pr-2">string</td>
-                                <td class="py-1"><code class="bg-blue-100 px-1 rounded">url_pattern</code> or <code class="bg-blue-100 px-1 rounded">landing_page</code></td>
+                                <td class="py-1"><code class="bg-blue-100 px-1 rounded">url_pattern</code>, <code class="bg-blue-100 px-1 rounded">landing_page</code>, or <code class="bg-blue-100 px-1 rounded">api</code></td>
                             </tr>
                             <tr class="border-b border-blue-100">
                                 <td class="py-1 pr-2 font-mono">document_type</td>
@@ -131,6 +131,21 @@
                                 <td class="py-1 pr-2 font-mono">landing_page_url</td>
                                 <td class="py-1 pr-2">landing_page mode</td>
                                 <td class="py-1">URL to scrape for PDF links (falls back to source URL)</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">api_url</td>
+                                <td class="py-1 pr-2">api mode</td>
+                                <td class="py-1">JSON API endpoint that returns publication data</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">pdf_json_path</td>
+                                <td class="py-1 pr-2">api mode</td>
+                                <td class="py-1">Dot-notation path to PDF URLs in API response (e.g. <code class="bg-blue-100 px-1 rounded">rows[].outlookReport</code>)</td>
+                            </tr>
+                            <tr class="border-b border-blue-100">
+                                <td class="py-1 pr-2 font-mono">date_json_path</td>
+                                <td class="py-1 pr-2">api mode (optional)</td>
+                                <td class="py-1">Dot-notation path to release dates (e.g. <code class="bg-blue-100 px-1 rounded">rows[].releaseDate</code>). Used for lookback filtering.</td>
                             </tr>
                         </tbody>
                     </table>

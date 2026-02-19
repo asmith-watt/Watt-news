@@ -25,7 +25,7 @@ def make_celery(app):
         },
         'check-research-schedules': {
             'task': 'app.tasks.check_research_schedules',
-            'schedule': 900.0,  # Every 15 minutes
+            'schedule': 3600.0,  # Every hour
         },
     }
 

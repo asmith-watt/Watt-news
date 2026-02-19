@@ -10,6 +10,7 @@ class SourceType(Enum):
     RSS_FEED = "RSS Feed"
     KEYWORD_SEARCH = "Keyword Search"
     DATA = "Data"
+    YOUTUBE_KEYWORDS = "YouTube Keywords"
     HOUSE_CONTENT = "House Content"
     COMPETITOR = "Competitor"
 

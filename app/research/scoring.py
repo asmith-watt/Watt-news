@@ -7,7 +7,9 @@ from datetime import datetime
 SOURCE_WEIGHTS = {
     'RSS Feed': 1.0,
     'News Site': 0.9,
+    'News': 0.9,
     'Keyword Search': 0.8,
+    'YouTube Keywords': 0.75,
     'Competitor': 0.7,
     'Data': 0.85,
     'House Content': 0.3,
@@ -86,7 +88,13 @@ def score_candidate(title: str, snippet: str, published_date: datetime,
     rec_score = compute_recency_score(published_date)
     sw = get_source_weight(source_type)
 
-    relevance = (kw_score * 0.50) + (rec_score * 0.30) + (sw * 100 * 0.20)
+    if published_date:
+        # Standard weights: keyword 50%, recency 30%, source 20%
+        relevance = (kw_score * 0.50) + (rec_score * 0.30) + (sw * 100 * 0.20)
+    else:
+        # No date: redistribute recency weight to keyword and source (keep ratio)
+        # keyword 71.4% (0.50/0.70), source 28.6% (0.20/0.70)
+        relevance = (kw_score * 0.714) + (sw * 100 * 0.286)
 
     return {
         'keyword_score': round(kw_score, 2),

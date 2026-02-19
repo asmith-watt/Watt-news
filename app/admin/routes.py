@@ -163,7 +163,7 @@ def new_news_source(pub_id):
         config = None
         if form.config_json.data and form.config_json.data.strip():
             try:
-                config = json.loads(form.config_json.data)
+                config = json.loads(form.config_json.data, strict=False)
             except json.JSONDecodeError as e:
                 flash(f'Invalid JSON in configuration: {e}', 'error')
                 return render_template('admin/news_source_form.html', title='New News Source', form=form, publication=publication)
@@ -205,7 +205,7 @@ def edit_news_source(pub_id, id):
         config = source.config
         if form.config_json.data and form.config_json.data.strip():
             try:
-                config = json.loads(form.config_json.data)
+                config = json.loads(form.config_json.data, strict=False)
             except json.JSONDecodeError as e:
                 flash(f'Invalid JSON in configuration: {e}', 'error')
                 return render_template('admin/news_source_form.html', title='Edit News Source', form=form, publication=publication, source=source)

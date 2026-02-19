@@ -187,9 +187,10 @@ This is the most complex scraper. It downloads government/institutional PDF repo
 
 ```
 1. Validate source.config JSON
-2. Discover report URLs
+2. Discover report URLs (three modes):
    ├─ url_pattern mode: generate URLs with {MMYY} placeholders, HEAD-check each
-   └─ landing_page mode: use Firecrawl to find PDF links on a page
+   ├─ landing_page mode: use Firecrawl to find PDF links on a page
+   └─ api mode: fetch a JSON API, extract PDF URLs via configurable JSON path
 3. For each discovered PDF:
    a. Download PDF bytes
    b. Extract text with pdfplumber (tables + body text)
@@ -198,6 +199,14 @@ This is the most complex scraper. It downloads government/institutional PDF repo
    e. Create one DiscoveredItem per angle (unique URL via ?angle=N query param)
    f. Write report_summary + key_figures back to source.config for next run
 ```
+
+#### Discovery modes
+
+| Mode | Use when | How it works |
+|------|----------|--------------|
+| `url_pattern` | PDF URLs follow a date-based pattern | Generates URLs with `{MMYY}` placeholders, HEAD-checks each to verify existence |
+| `landing_page` | PDFs are linked directly from a web page | Uses Firecrawl to scrape the page and find `.pdf` links |
+| `api` | A public JSON API lists publications with PDF URLs | Fetches the API endpoint, extracts PDF URLs and dates using configurable dot-notation JSON paths (e.g. `rows[].outlookReport`). Filters by `lookback_months`. Ideal for government data portals like USDA ERS. |
 
 #### One PDF produces many candidates
 
@@ -405,7 +414,7 @@ Each Data source requires a `config` JSON object configured via the admin UI (Ad
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `discovery_mode` | string | `"url_pattern"` or `"landing_page"` |
+| `discovery_mode` | string | `"url_pattern"`, `"landing_page"`, or `"api"` |
 | `document_type` | string | `"pdf"` (only supported type currently) |
 | `report_name` | string | Human-readable report name (e.g. `"WASDE"`) |
 | `publisher` | string | Organization name (e.g. `"USDA"`) |
@@ -418,6 +427,9 @@ Each Data source requires a `config` JSON object configured via the admin UI (Ad
 |-------|---------------|-------------|
 | `url_pattern` | `discovery_mode` = `"url_pattern"` | URL template with `{MMYY}` placeholder (e.g. `https://example.gov/report{MMYY}.pdf`) |
 | `landing_page_url` | `discovery_mode` = `"landing_page"` | URL to scrape for PDF links. Falls back to `source.url` if omitted. |
+| `api_url` | `discovery_mode` = `"api"` | JSON API endpoint that returns publication listings |
+| `pdf_json_path` | `discovery_mode` = `"api"` | Dot-notation path to PDF URLs in the API response (e.g. `rows[].outlookReport`). Supports `[]` for array iteration. |
+| `date_json_path` | `discovery_mode` = `"api"` (optional) | Dot-notation path to release dates (e.g. `rows[].releaseDate`). Used with `lookback_months` to filter old reports. |
 
 #### Optional fields
 
@@ -428,7 +440,7 @@ Each Data source requires a `config` JSON object configured via the admin UI (Ad
 | `claude_model` | `claude-sonnet-4-20250514` | Anthropic model ID |
 | `previous_report_data` | `null` | Auto-populated after each run with `report_summary` and `key_figures` for month-over-month context |
 
-#### Example: USDA WASDE Monthly Report
+#### Example: USDA WASDE Monthly Report (url_pattern mode)
 
 ```json
 {
@@ -443,3 +455,25 @@ Each Data source requires a `config` JSON object configured via the admin UI (Ad
   "max_angles": 5
 }
 ```
+
+#### Example: USDA ERS Feed Outlook (api mode)
+
+For reports where URLs don't follow a date pattern (e.g. `pub-details?pubid=113811`), use `api` mode to query the publisher's JSON API directly.
+
+```json
+{
+  "discovery_mode": "api",
+  "api_url": "https://www.ers.usda.gov/api/publications/v1.0?series=FDS&pageSize=5",
+  "pdf_json_path": "rows[].outlookReport",
+  "date_json_path": "rows[].releaseDate",
+  "document_type": "pdf",
+  "report_name": "Feed Outlook",
+  "publisher": "USDA ERS",
+  "cadence": "monthly",
+  "lookback_months": 2,
+  "analysis_prompt": "You are a senior agricultural commodities analyst specializing in feed grains. Analyze this USDA ERS Feed Outlook report and identify the most newsworthy story angles for agricultural trade publication readers. Focus on feed grain supply/demand changes, price forecasts, livestock feeding trends, and any data that diverges from market expectations.",
+  "max_angles": 5
+}
+```
+
+The `pdf_json_path` and `date_json_path` use dot-notation with `[]` to traverse arrays. For example, `rows[].outlookReport` means "iterate over the `rows` array and extract the `outlookReport` field from each item." Nested paths like `data.publications[].files[].url` are also supported.

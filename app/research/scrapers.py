@@ -69,25 +69,51 @@ class RSSFeedScraper(BaseScraper):
 
             tags = [t.get('term', '') for t in entry.get('tags', [])]
 
+            metadata = {'tags': tags, 'feed_title': feed.feed.get('title', '')}
+
+            # Extract full content from feedparser (free, no API call)
+            content_entries = entry.get('content', [])
+            if content_entries and isinstance(content_entries, list):
+                # feedparser stores content as list of dicts with 'value' key
+                full_parts = [c.get('value', '') for c in content_entries if c.get('value')]
+                if full_parts:
+                    metadata['rss_full_content'] = '\n'.join(full_parts)
+
             items.append(DiscoveredItem(
                 url=link,
                 title=entry.get('title'),
                 snippet=entry.get('summary', entry.get('description')),
                 author=entry.get('author'),
                 published_date=pub_date,
-                metadata={'tags': tags, 'feed_title': feed.feed.get('title', '')},
+                metadata=metadata,
             ))
 
         return items
 
 
 class NewsSiteScraper(BaseScraper):
-    """Use Firecrawl /map endpoint to discover article URLs on a news site."""
+    """Discover articles on a news site. Tries RSS feed first, falls back to Firecrawl /map."""
+
+    # Common RSS/API paths to probe (relative to site root)
+    _FEED_PATHS = [
+        '/feed', '/feed/', '/rss', '/rss/', '/feed.xml', '/rss.xml',
+        '/atom.xml', '/feeds/posts/default',
+        '/news/feed', '/news/rss', '/blog/feed', '/blog/rss',
+    ]
+    # WordPress REST API posts endpoint
+    _WP_API_PATH = '/wp-json/wp/v2/posts?per_page=20&orderby=date&order=desc'
 
     def scrape(self, source) -> List[DiscoveredItem]:
         if not source.url:
             return []
 
+        # Try RSS feed first — free, includes dates/titles/content
+        rss_items = self._try_rss_feed(source)
+        if rss_items:
+            logger.info(f"RSS feed found for {source.url}, got {len(rss_items)} items")
+            return rss_items
+
+        # Fall back to Firecrawl /map
         api_key = current_app.config.get('FIRECRAWL_API_KEY')
         if not api_key:
             logger.warning("FIRECRAWL_API_KEY not configured, skipping NewsSiteScraper")
@@ -98,6 +124,165 @@ class NewsSiteScraper(BaseScraper):
             items.extend(self._scrape_links_fallback(source))
 
         return items
+
+    def _try_rss_feed(self, source) -> List[DiscoveredItem]:
+        """Probe common RSS feed paths on the site. Returns items if a feed is found."""
+        parsed = urlparse(source.url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        # Try RSS/Atom feeds first
+        for feed_path in self._FEED_PATHS:
+            feed_url = base_url + feed_path
+            items = self._parse_rss_url(feed_url)
+            if items:
+                return items
+
+        # Try WordPress REST API
+        wp_items = self._try_wp_api(base_url)
+        if wp_items:
+            return wp_items
+
+        return []
+
+    def _parse_rss_url(self, feed_url) -> List[DiscoveredItem]:
+        """Try to fetch and parse an RSS/Atom feed URL. Returns items or empty list."""
+        try:
+            resp = requests.get(feed_url, timeout=5, allow_redirects=True)
+            if resp.status_code != 200:
+                return []
+
+            content_type = resp.headers.get('Content-Type', '').lower()
+            is_feed = any(t in content_type for t in ['xml', 'rss', 'atom', 'feed'])
+            body_start = resp.text[:200].strip()
+            is_xml = body_start.startswith('<?xml') or body_start.startswith('<rss') or body_start.startswith('<feed')
+
+            if not is_feed and not is_xml:
+                return []
+
+            feed = feedparser.parse(resp.text)
+            if not feed.entries:
+                return []
+
+            logger.info(f"Found RSS feed at {feed_url} with {len(feed.entries)} entries")
+            items = []
+            for entry in feed.entries:
+                link = entry.get('link')
+                if not link:
+                    continue
+
+                pub_date = None
+                for date_field in ('published_parsed', 'updated_parsed'):
+                    parsed_date = entry.get(date_field)
+                    if parsed_date:
+                        try:
+                            pub_date = datetime(*parsed_date[:6])
+                        except Exception:
+                            pass
+                        break
+
+                tags = [t.get('term', '') for t in entry.get('tags', [])]
+                metadata = {
+                    'tags': tags,
+                    'feed_title': feed.feed.get('title', ''),
+                    'feed_url': feed_url,
+                }
+
+                # Extract full content (free enrichment)
+                content_entries = entry.get('content', [])
+                if content_entries and isinstance(content_entries, list):
+                    full_parts = [c.get('value', '') for c in content_entries if c.get('value')]
+                    if full_parts:
+                        metadata['rss_full_content'] = '\n'.join(full_parts)
+
+                items.append(DiscoveredItem(
+                    url=link,
+                    title=entry.get('title'),
+                    snippet=entry.get('summary', entry.get('description')),
+                    author=entry.get('author'),
+                    published_date=pub_date,
+                    metadata=metadata,
+                ))
+
+            return items
+
+        except requests.RequestException:
+            return []
+        except Exception as e:
+            logger.debug(f"Feed probe failed for {feed_url}: {e}")
+            return []
+
+    def _try_wp_api(self, base_url) -> List[DiscoveredItem]:
+        """Try the WordPress REST API to fetch recent posts."""
+        api_url = base_url + self._WP_API_PATH
+        try:
+            resp = requests.get(api_url, timeout=5, allow_redirects=True)
+            if resp.status_code != 200:
+                return []
+
+            content_type = resp.headers.get('Content-Type', '').lower()
+            if 'json' not in content_type:
+                return []
+
+            posts = resp.json()
+            if not isinstance(posts, list) or not posts:
+                return []
+
+            logger.info(f"Found WordPress API at {base_url} with {len(posts)} posts")
+            items = []
+            for post in posts:
+                link = post.get('link', '')
+                if not link:
+                    continue
+
+                pub_date = None
+                date_str = post.get('date_gmt') or post.get('date')
+                if date_str:
+                    try:
+                        from dateutil.parser import parse as parse_date
+                        pub_date = parse_date(date_str)
+                    except (ValueError, TypeError):
+                        pass
+
+                title = ''
+                title_obj = post.get('title', {})
+                if isinstance(title_obj, dict):
+                    title = title_obj.get('rendered', '')
+                elif isinstance(title_obj, str):
+                    title = title_obj
+
+                snippet = ''
+                excerpt_obj = post.get('excerpt', {})
+                if isinstance(excerpt_obj, dict):
+                    snippet = excerpt_obj.get('rendered', '')
+                elif isinstance(excerpt_obj, str):
+                    snippet = excerpt_obj
+
+                # Strip HTML tags from title and snippet
+                import re as _re
+                title = _re.sub(r'<[^>]+>', '', title).strip()
+                snippet = _re.sub(r'<[^>]+>', '', snippet).strip()
+
+                # Full content from WP API (free enrichment)
+                metadata = {'content_source': 'wp_api'}
+                content_obj = post.get('content', {})
+                if isinstance(content_obj, dict) and content_obj.get('rendered'):
+                    metadata['rss_full_content'] = content_obj['rendered']
+
+                items.append(DiscoveredItem(
+                    url=link,
+                    title=title,
+                    snippet=snippet[:500],
+                    published_date=pub_date,
+                    metadata=metadata,
+                ))
+
+            return items
+
+        except requests.RequestException:
+            return []
+        except Exception as e:
+            logger.debug(f"WordPress API probe failed for {base_url}: {e}")
+            return []
 
     def _map_site(self, source) -> List[DiscoveredItem]:
         payload = {
@@ -112,7 +297,7 @@ class NewsSiteScraper(BaseScraper):
                 'https://api.firecrawl.dev/v1/map',
                 headers=self._firecrawl_headers(),
                 json=payload,
-                timeout=30,
+                timeout=60,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -138,7 +323,7 @@ class NewsSiteScraper(BaseScraper):
                 'https://api.firecrawl.dev/v1/scrape',
                 headers=self._firecrawl_headers(),
                 json={'url': source.url, 'formats': ['links']},
-                timeout=30,
+                timeout=60,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -204,6 +389,73 @@ class KeywordSearchScraper(BaseScraper):
             ))
 
         return [i for i in items if i.url]
+
+
+class YouTubeSearchScraper(BaseScraper):
+    """Use SerpAPI YouTube engine to find videos by keyword."""
+
+    def scrape(self, source) -> List[DiscoveredItem]:
+        keywords = source.keywords
+        if not keywords:
+            return []
+
+        api_key = current_app.config.get('SERPAPI_API_KEY')
+        if not api_key:
+            logger.warning("SERPAPI_API_KEY not configured, skipping YouTubeSearchScraper")
+            return []
+
+        try:
+            from serpapi import GoogleSearch
+            params = {
+                'engine': 'youtube',
+                'search_query': keywords,
+                'gl': 'us',
+                'hl': 'en',
+                'api_key': api_key,
+            }
+            search = GoogleSearch(params)
+            results = search.get_dict()
+        except Exception as e:
+            logger.error(f"SerpAPI YouTube search failed for keywords '{keywords}': {e}")
+            return []
+
+        items = []
+        for video in results.get('video_results', []):
+            link = video.get('link', '')
+            if not link:
+                continue
+
+            pub_date = None
+            published_str = video.get('published_date')
+            if published_str:
+                try:
+                    from dateutil.parser import parse as parse_date
+                    pub_date = parse_date(published_str, fuzzy=True)
+                except (ValueError, TypeError):
+                    pass
+
+            channel = video.get('channel', {})
+            views = video.get('views')
+
+            items.append(DiscoveredItem(
+                url=link,
+                title=video.get('title'),
+                snippet=video.get('description'),
+                author=channel.get('name'),
+                published_date=pub_date,
+                metadata={
+                    'content_type': 'youtube_video',
+                    'channel_name': channel.get('name'),
+                    'channel_link': channel.get('link'),
+                    'channel_verified': channel.get('verified', False),
+                    'views': views,
+                    'length': video.get('length'),
+                    'thumbnail': video.get('thumbnail', {}).get('static') if isinstance(video.get('thumbnail'), dict) else video.get('thumbnail'),
+                    'video_id': video.get('video_id'),
+                },
+            ))
+
+        return items
 
 
 class CompetitorScraper(NewsSiteScraper):
@@ -283,6 +535,12 @@ class DataScraper(BaseScraper):
         if mode == 'landing_page' and not config.get('landing_page_url'):
             logger.warning("DataScraper: landing_page mode requires 'landing_page_url' in config")
             return False
+        if mode == 'api' and not config.get('api_url'):
+            logger.warning("DataScraper: api mode requires 'api_url' in config")
+            return False
+        if mode == 'api' and not config.get('pdf_json_path'):
+            logger.warning("DataScraper: api mode requires 'pdf_json_path' in config")
+            return False
 
         return True
 
@@ -294,6 +552,8 @@ class DataScraper(BaseScraper):
             return self._discover_via_pattern(config)
         elif mode == 'landing_page':
             return self._discover_via_landing_page(source)
+        elif mode == 'api':
+            return self._discover_via_api(config)
 
         logger.warning(f"DataScraper: unknown discovery_mode '{mode}'")
         return []
@@ -358,6 +618,99 @@ class DataScraper(BaseScraper):
         for link in data.get('data', {}).get('links', []):
             if isinstance(link, str) and link.lower().endswith('.pdf'):
                 urls.append({'url': link, 'date': None})
+
+        return urls
+
+    @staticmethod
+    def _resolve_json_path(data, path: str) -> list:
+        """Resolve a simple dot/bracket JSON path like 'rows[].outlookReport' into a list of values.
+
+        Supports:
+          - 'field'           → data['field']
+          - 'field[]'         → iterate over data['field']
+          - 'field[].child'   → [item['child'] for item in data['field']]
+          - 'a.b[].c.d'      → nested traversal
+        """
+        parts = []
+        for segment in path.split('.'):
+            if segment.endswith('[]'):
+                parts.append(('iter', segment[:-2]))
+            else:
+                parts.append(('key', segment))
+
+        def _walk(obj, remaining_parts):
+            if not remaining_parts:
+                return [obj] if obj is not None else []
+
+            kind, key = remaining_parts[0]
+            rest = remaining_parts[1:]
+
+            if kind == 'iter':
+                collection = obj.get(key, []) if isinstance(obj, dict) else []
+                results = []
+                for item in collection:
+                    results.extend(_walk(item, rest))
+                return results
+            else:
+                child = obj.get(key) if isinstance(obj, dict) else None
+                if child is None:
+                    return []
+                return _walk(child, rest)
+
+        return _walk(data, parts)
+
+    def _discover_via_api(self, config: dict) -> List[dict]:
+        """Fetch a JSON API endpoint and extract PDF URLs using configured JSON paths."""
+        from dateutil.parser import parse as parse_date
+        from dateutil.relativedelta import relativedelta
+
+        api_url = config['api_url']
+        pdf_path = config['pdf_json_path']
+        date_path = config.get('date_json_path')
+        lookback = config.get('lookback_months', 2)
+
+        try:
+            resp = requests.get(api_url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.error(f"DataScraper: API request failed for {api_url}: {e}")
+            return []
+
+        pdf_urls = self._resolve_json_path(data, pdf_path)
+
+        # Extract dates if a date path is configured
+        dates = []
+        if date_path:
+            dates = self._resolve_json_path(data, date_path)
+
+        # Pair URLs with dates (pad dates list if shorter)
+        urls = []
+        cutoff = datetime.utcnow() - relativedelta(months=lookback)
+
+        for idx, pdf_url in enumerate(pdf_urls):
+            if not pdf_url or not isinstance(pdf_url, str):
+                continue
+
+            # Parse the corresponding date if available
+            report_date = None
+            date_str = None
+            if idx < len(dates) and dates[idx]:
+                try:
+                    parsed_dt = parse_date(str(dates[idx]))
+                    report_date = parsed_dt.strftime('%Y-%m')
+                    # Skip reports older than lookback window
+                    if parsed_dt.replace(tzinfo=None) < cutoff:
+                        logger.debug(f"DataScraper: skipping {pdf_url} — older than {lookback} months")
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+            urls.append({
+                'url': pdf_url,
+                'date': report_date,
+            })
+            logger.info(f"DataScraper: found report via API at {pdf_url} (date={report_date})")
 
         return urls
 
@@ -472,6 +825,17 @@ class DataScraper(BaseScraper):
         items = []
         angles = analysis.get('story_angles', [])
 
+        # Use actual report date if available, otherwise fall back to now
+        pub_date = None
+        if report_date:
+            try:
+                from dateutil.parser import parse as parse_date
+                pub_date = parse_date(report_date)
+            except (ValueError, TypeError):
+                pass
+        if not pub_date:
+            pub_date = datetime.utcnow()
+
         for idx, angle in enumerate(angles, start=1):
             # Create unique URL per angle using query param
             parsed = urlparse(pdf_url)
@@ -487,7 +851,7 @@ class DataScraper(BaseScraper):
                 title=angle.get('headline'),
                 snippet=angle.get('summary'),
                 author=config.get('publisher'),
-                published_date=datetime.utcnow(),
+                published_date=pub_date,
                 metadata={
                     'source_type': 'Data',
                     'report_name': config.get('report_name'),
@@ -527,7 +891,9 @@ class DataScraper(BaseScraper):
 SCRAPER_REGISTRY = {
     'RSS Feed': RSSFeedScraper,
     'News Site': NewsSiteScraper,
+    'News': NewsSiteScraper,
     'Keyword Search': KeywordSearchScraper,
+    'YouTube Keywords': YouTubeSearchScraper,
     'Data': DataScraper,
 }
 
