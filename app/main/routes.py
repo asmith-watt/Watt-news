@@ -357,6 +357,55 @@ def trigger_content_workflow(id):
     return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id))
 
 
+@bp.route('/publication/<int:id>/trigger-candidate-content-workflow', methods=['POST'])
+@login_required
+def trigger_candidate_content_workflow(id):
+    publication = Publication.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        flash('Access denied', 'error')
+        return redirect(url_for('main.dashboard'))
+
+    workflow_url = current_app.config.get('N8N_CANDIDATE_CONTENT_WORKFLOW_URL')
+    if not workflow_url:
+        flash('Candidate content workflow URL is not configured. Set N8N_CANDIDATE_CONTENT_WORKFLOW_URL environment variable.', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=publication.id,
+        triggered_by_id=current_user.id,
+        workflow_type='candidate_content_generation',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    try:
+        requests.get(
+            workflow_url,
+            params={
+                'publication_id': publication.id,
+                'workflow_id': workflow_id
+            },
+            timeout=0.5
+        )
+    except requests.exceptions.Timeout:
+        pass
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
+        flash(f'Failed to trigger workflow: {str(e)}', 'error')
+        return redirect(url_for('main.dashboard', publication_id=id))
+
+    workflow_run.status = 'running'
+    db.session.commit()
+
+    return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id, workflow_type='candidate_content_generation'))
+
+
 @bp.route('/publication/<int:id>/submit-url-workflow', methods=['POST'])
 @login_required
 def submit_url_workflow(id):

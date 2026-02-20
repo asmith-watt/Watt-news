@@ -16,9 +16,16 @@
         </form>
         <form method="POST" action="{{ url_for('main.trigger_content_workflow', id=current_publication.id) }}"
               class="inline"
-              onsubmit="return confirm('Trigger content generation workflow for {{ current_publication.name }}?');">
-            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                Generate Content
+              onsubmit="return confirm('Trigger Perplexity content generation workflow for {{ current_publication.name }}?');">
+            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 whitespace-nowrap">
+                Generate Content from Perplexity
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('main.trigger_candidate_content_workflow', id=current_publication.id) }}"
+              class="inline"
+              onsubmit="return confirm('Trigger candidate content generation workflow for {{ current_publication.name }}?');">
+            <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
+                Generate Content from Candidates
             </button>
         </form>
     </div>
@@ -224,9 +231,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (workflowId) {
         currentWorkflowId = workflowId;
         const workflowType = getUrlParam('workflow_type');
-        const runningMsg = workflowType === 'submit_url'
-            ? 'Article-from-URL workflow is running...'
-            : 'Content generation workflow is running...';
+        let runningMsg = 'Content generation workflow is running...';
+        if (workflowType === 'submit_url') runningMsg = 'Article-from-URL workflow is running...';
+        else if (workflowType === 'candidate_content_generation') runningMsg = 'Candidate content generation workflow is running...';
         showWorkflowStatus('running', runningMsg);
         // Poll every 3 seconds
         pollWorkflowStatus(workflowId, runningMsg);
