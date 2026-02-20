@@ -265,6 +265,9 @@ def create_news():
 
         db.session.commit()
 
+        # Auto-reconcile: mark matching candidates as processed
+        matched_candidates = _reconcile_candidates(publication_id, source_url_str, content.id)
+
         response = {
             'success': True,
             'id': content.id,
@@ -275,11 +278,48 @@ def create_news():
             response['version_ids'] = [v.id for v in created_versions]
             response['selected_version_id'] = content.selected_version_id
 
+        if matched_candidates:
+            response['candidates_processed'] = matched_candidates
+
         return jsonify(response), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create news content: {str(e)}'}), 500
+
+
+def _reconcile_candidates(publication_id, source_url_str, news_content_id):
+    """Mark candidate articles as processed when their URL appears in a news item's source_url."""
+    if not source_url_str:
+        return []
+
+    # source_url can be "url1 | url2" or "url (date) | url2 (date)"
+    import re
+    urls = []
+    for part in source_url_str.split(' | '):
+        clean = re.sub(r'\s*\(.*?\)\s*$', '', part.strip())
+        if clean:
+            urls.append(clean)
+
+    if not urls:
+        return []
+
+    matched = []
+    candidates = CandidateArticle.query.filter(
+        CandidateArticle.publication_id == publication_id,
+        CandidateArticle.url.in_(urls),
+        CandidateArticle.status != 'processed',
+    ).all()
+
+    for c in candidates:
+        c.status = 'processed'
+        c.news_content_id = news_content_id
+        matched.append(c.id)
+
+    if matched:
+        db.session.commit()
+
+    return matched
 
 
 @bp.route('/news/bulk', methods=['POST'])
@@ -345,11 +385,30 @@ def create_news_bulk():
 
     try:
         db.session.commit()
-        return jsonify({
+
+        # Auto-reconcile candidates for each created item
+        total_matched = []
+        for idx in created:
+            item = data[idx]
+            pub_id = int(item['publication_id'])
+            source_url = item.get('source_url')
+            # Find the content we just created by matching title+publication
+            content = NewsContent.query.filter_by(
+                publication_id=pub_id, title=item['title']
+            ).order_by(NewsContent.created_at.desc()).first()
+            if content and source_url:
+                matched = _reconcile_candidates(pub_id, source_url, content.id)
+                total_matched.extend(matched)
+
+        response = {
             'success': True,
             'created': len(created),
             'errors': errors
-        }), 201
+        }
+        if total_matched:
+            response['candidates_processed'] = total_matched
+
+        return jsonify(response), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to commit: {str(e)}'}), 500
