@@ -253,9 +253,13 @@ def _enrich_web_article(url: str, metadata: dict, source_url: str = None) -> dic
         metadata['enrichment_failed'] = True
         metadata['enrichment_error'] = 'Firecrawl scrape returned no content'
 
-    # Extract publish date from page metadata, falling back to URL pattern
+    # Extract publish date: OG meta → page content → URL pattern
     page_meta = scrape_data.get('metadata', {})
-    published_date = _extract_publish_date(page_meta) or _extract_date_from_url(url)
+    published_date = (
+        _extract_publish_date(page_meta)
+        or _extract_date_from_content(markdown)
+        or _extract_date_from_url(url)
+    )
     if published_date:
         metadata['extracted_published_date'] = published_date.isoformat()
 
@@ -324,13 +328,64 @@ def _extract_publish_date(page_metadata: dict) -> Optional[datetime]:
         if value:
             try:
                 dt = parse_date(str(value))
-                # Sanity check: not in the future, not older than 2 years
+                # Sanity check: not in the future, not older than 10 years
                 now = datetime.now(timezone.utc)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                if dt <= now and (now - dt).days < 730:
+                if dt <= now and (now - dt).days < 3650:
                     return dt
             except (ValueError, TypeError):
+                continue
+
+    return None
+
+
+# Patterns for dates in page content (first ~1000 chars)
+# Match common formats: 12/12/2024, December 12, 2024, 2024-12-12, Dec 12, 2024
+_CONTENT_DATE_PATTERNS = [
+    # ISO: 2024-12-12
+    re.compile(r'\b(\d{4}-\d{1,2}-\d{1,2})\b'),
+    # US slash: 12/12/2024 or 1/5/2024
+    re.compile(r'\b(\d{1,2}/\d{1,2}/\d{4})\b'),
+    # Long month: December 12, 2024 or Dec 12, 2024
+    re.compile(
+        r'\b((?:January|February|March|April|May|June|July|August|September|October|November|December'
+        r'|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{1,2},?\s+\d{4})\b',
+        re.IGNORECASE,
+    ),
+    # Day-month-year: 12 December 2024
+    re.compile(
+        r'\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b',
+        re.IGNORECASE,
+    ),
+]
+
+
+def _extract_date_from_content(markdown: Optional[str]) -> Optional[datetime]:
+    """Extract a publish date from the first portion of page content.
+
+    Scans the first ~1500 chars of markdown for common date patterns.
+    Dates are typically near the top of an article (byline area).
+    """
+    if not markdown:
+        return None
+
+    from dateutil.parser import parse as parse_date
+
+    # Only scan the top of the page where dates typically appear
+    header = markdown[:1500]
+    now = datetime.now(timezone.utc)
+
+    for pattern in _CONTENT_DATE_PATTERNS:
+        m = pattern.search(header)
+        if m:
+            try:
+                dt = parse_date(m.group(1), fuzzy=False)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt <= now and (now - dt).days < 3650:
+                    return dt
+            except (ValueError, TypeError, OverflowError):
                 continue
 
     return None

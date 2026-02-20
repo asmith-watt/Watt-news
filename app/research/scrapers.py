@@ -123,6 +123,12 @@ class NewsSiteScraper(BaseScraper):
         if len(items) < 5:
             items.extend(self._scrape_links_fallback(source))
 
+        # Cap /map results: these are undated bare URLs, so limit to avoid
+        # flooding triage/enrichment with potentially old content.
+        if len(items) > 15:
+            logger.info(f"Capping {len(items)} /map URLs to 15 for {source.url}")
+            items = items[:15]
+
         return items
 
     def _try_rss_feed(self, source) -> List[DiscoveredItem]:
