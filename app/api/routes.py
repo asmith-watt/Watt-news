@@ -2,7 +2,7 @@ from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime, timedelta
 from app import db
-from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion
+from app.models import NewsContent, NewsSource, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle
 from app.api import bp
 
 
@@ -919,4 +919,188 @@ def get_recent_articles():
         ],
         'count': len(articles),
         'days': days
+    })
+
+
+@bp.route('/candidates/<int:publication_id>', methods=['GET'])
+@require_api_key
+def get_candidates(publication_id):
+    """
+    Get scored candidate articles for a publication.
+    Primary endpoint for n8n to pull curated candidates.
+
+    Query params:
+    - status: filter by status (default depends on require_candidate_review)
+    - min_score: minimum relevance score (default: 0)
+    - limit: max results (default: 20, max: 100)
+    - source_id: filter by news source
+    """
+    is_valid, error_response = validate_publication_access(publication_id)
+    if not is_valid:
+        return error_response
+
+    publication = Publication.query.get(publication_id)
+    if not publication:
+        return jsonify({'error': 'Publication not found'}), 404
+
+    # Default status depends on curation mode
+    default_status = 'selected' if publication.require_candidate_review else 'new'
+    status = request.args.get('status', default_status)
+    min_score = request.args.get('min_score', 0, type=float)
+    limit = min(request.args.get('limit', 20, type=int), 100)
+    source_id = request.args.get('source_id', type=int)
+
+    query = CandidateArticle.query.filter(
+        CandidateArticle.publication_id == publication_id,
+        CandidateArticle.status == status,
+        CandidateArticle.relevance_score >= min_score,
+    )
+
+    if source_id:
+        query = query.filter(CandidateArticle.news_source_id == source_id)
+
+    candidates = query.order_by(
+        CandidateArticle.relevance_score.desc()
+    ).limit(limit).all()
+
+    return jsonify({
+        'candidates': [
+            {
+                'id': c.id,
+                'url': c.url,
+                'title': c.title,
+                'snippet': c.snippet,
+                'author': c.author,
+                'published_date': c.published_date.isoformat() if c.published_date else None,
+                'relevance_score': c.relevance_score,
+                'keyword_score': c.keyword_score,
+                'recency_score': c.recency_score,
+                'source_weight': c.source_weight,
+                'status': c.status,
+                'triage_verdict': (c.extra_metadata or {}).get('triage_verdict'),
+                'triage_reasoning': (c.extra_metadata or {}).get('triage_reasoning'),
+                'content_source': (c.extra_metadata or {}).get('content_source'),
+                'source': {
+                    'id': c.news_source.id,
+                    'name': c.news_source.name,
+                    'type': c.news_source.source_type,
+                } if c.news_source else None,
+                'metadata': c.extra_metadata,
+                'discovered_at': c.discovered_at.isoformat() if c.discovered_at else None,
+            }
+            for c in candidates
+        ],
+        'count': len(candidates),
+        'publication_id': publication_id,
+        'require_candidate_review': publication.require_candidate_review,
+    })
+
+
+@bp.route('/candidates/<int:candidate_id>/status', methods=['POST'])
+@require_api_key
+def update_candidate_status(candidate_id):
+    """
+    Update a single candidate's status.
+    Payload: { "status": "selected|rejected|processed", "news_content_id": 123 }
+    """
+    candidate = CandidateArticle.query.get(candidate_id)
+    if not candidate:
+        return jsonify({'error': 'Candidate not found'}), 404
+
+    is_valid, error_response = validate_publication_access(candidate.publication_id)
+    if not is_valid:
+        return error_response
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_status = data.get('status')
+    if new_status not in ('selected', 'rejected', 'processed'):
+        return jsonify({'error': 'Invalid status. Must be: selected, rejected, or processed'}), 400
+
+    candidate.status = new_status
+    if data.get('news_content_id'):
+        candidate.news_content_id = int(data['news_content_id'])
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'id': candidate.id,
+        'status': candidate.status,
+    })
+
+
+@bp.route('/candidates/bulk-status', methods=['POST'])
+@require_api_key
+def bulk_update_candidate_status():
+    """
+    Batch status update for candidates.
+    Payload: { "updates": [{ "id": 1, "status": "processed", "news_content_id": 456 }] }
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    updates = data.get('updates', [])
+
+    if not updates:
+        return jsonify({'error': 'No updates provided'}), 400
+
+    results = []
+    errors = []
+
+    for idx, update in enumerate(updates):
+        cid = update.get('id')
+        new_status = update.get('status')
+
+        if not cid or not new_status:
+            errors.append({'index': idx, 'error': 'Missing id or status'})
+            continue
+
+        if new_status not in ('selected', 'rejected', 'processed'):
+            errors.append({'index': idx, 'error': f'Invalid status: {new_status}'})
+            continue
+
+        candidate = CandidateArticle.query.get(cid)
+        if not candidate:
+            errors.append({'index': idx, 'error': f'Candidate {cid} not found'})
+            continue
+
+        is_valid, _ = validate_publication_access(candidate.publication_id)
+        if not is_valid:
+            errors.append({'index': idx, 'error': f'Access denied for candidate {cid}'})
+            continue
+
+        candidate.status = new_status
+        if update.get('news_content_id'):
+            candidate.news_content_id = int(update['news_content_id'])
+        results.append(cid)
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to commit: {str(e)}'}), 500
+
+    return jsonify({
+        'success': True,
+        'updated': len(results),
+        'errors': errors,
+    })
+
+
+@bp.route('/research/trigger/<int:publication_id>', methods=['POST'])
+@require_api_key
+def trigger_research(publication_id):
+    """Manual research trigger via API."""
+    is_valid, error_response = validate_publication_access(publication_id)
+    if not is_valid:
+        return error_response
+
+    publication = Publication.query.get(publication_id)
+    if not publication:
+        return jsonify({'error': 'Publication not found'}), 404
+
+    from app.tasks import research_publication_sources
+    research_publication_sources.delay(publication_id)
+
+    return jsonify({
+        'success': True,
+        'message': f'Research triggered for publication {publication_id}',
     })

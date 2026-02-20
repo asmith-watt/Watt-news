@@ -15,6 +15,9 @@ class PublicationForm(FlaskForm):
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
     is_active = BooleanField('Active')
 
+    # Research fields
+    require_candidate_review = BooleanField('Require Candidate Review')
+
     # Scheduling fields
     schedule_enabled = BooleanField('Enable Scheduled Content Generation')
     schedule_frequency = SelectField('Frequency', choices=[
@@ -68,6 +71,7 @@ class NewsSourceForm(FlaskForm):
     source_type = SelectField('Source Type', choices=SourceType.choices(), validators=[Optional()])
     url = StringField('URL', validators=[Optional()])
     keywords = TextAreaField('Keywords', validators=[Optional()])
+    config_json = TextAreaField('Configuration JSON', validators=[Optional()])
     is_active = BooleanField('Active')
     submit = SubmitField('Save')
 

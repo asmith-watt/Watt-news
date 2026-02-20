@@ -22,6 +22,11 @@ class Config:
     CMS_API_URL = os.environ.get('CMS_API_URL')
     CMS_API_KEY = os.environ.get('CMS_API_KEY')
 
+    # Research / Scraping
+    FIRECRAWL_API_KEY = os.environ.get('FIRECRAWL_API_KEY')
+    SERPAPI_API_KEY = os.environ.get('SERPAPI_API_KEY')
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+
     # n8n Workflow Triggers
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')
@@ -35,6 +40,16 @@ class Config:
         _redis_url = _redis_url + '?ssl_cert_reqs=CERT_NONE'
     CELERY_BROKER_URL = _redis_url
     CELERY_RESULT_BACKEND = _redis_url
+
+    # Enrichment
+    ENRICHMENT_MIN_SCORE = float(os.environ.get('ENRICHMENT_MIN_SCORE', 25.0))
+    ENRICHMENT_MAX_PER_RUN = int(os.environ.get('ENRICHMENT_MAX_PER_RUN', 50))
+
+    # LLM Triage
+    TRIAGE_ENABLED = os.environ.get('TRIAGE_ENABLED', 'true').lower() == 'true'
+    TRIAGE_MODEL = os.environ.get('TRIAGE_MODEL', 'claude-haiku-4-5-20251001')
+    TRIAGE_MAX_BATCH_SIZE = int(os.environ.get('TRIAGE_MAX_BATCH_SIZE', 40))
+    TRIAGE_FETCH_BUDGET = int(os.environ.get('TRIAGE_FETCH_BUDGET', 5))
 
     # Pagination
     ITEMS_PER_PAGE = 20
