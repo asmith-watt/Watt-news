@@ -693,3 +693,90 @@ def update_candidate_status(id):
     db.session.commit()
 
     return jsonify({'success': True, 'status': candidate.status})
+
+
+@bp.route('/candidate/<int:id>/create-article', methods=['POST'])
+@login_required
+def create_article_from_candidate(id):
+    """Send a candidate article's URL to the n8n submit-URL workflow."""
+    candidate = CandidateArticle.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(candidate.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    workflow_url = current_app.config.get('N8N_SUBMIT_URL_WORKFLOW_URL')
+    if not workflow_url:
+        return jsonify({'error': 'Submit URL workflow not configured'}), 500
+
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=candidate.publication_id,
+        triggered_by_id=current_user.id,
+        workflow_type='submit_url',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    try:
+        requests.post(
+            workflow_url,
+            json={
+                'publication_id': candidate.publication_id,
+                'workflow_id': workflow_id,
+                'source_url': candidate.url
+            },
+            headers={'Content-Type': 'application/json'},
+            timeout=5
+        )
+    except requests.exceptions.Timeout:
+        pass
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
+        return jsonify({'error': f'Failed to trigger workflow: {e}'}), 500
+
+    workflow_run.status = 'running'
+    candidate.status = 'processed'
+    db.session.commit()
+
+    return jsonify({'success': True, 'workflow_id': workflow_id})
+
+
+@bp.route('/candidate/<int:id>/detail')
+@login_required
+def candidate_detail(id):
+    """Return candidate detail as JSON for the detail modal."""
+    candidate = CandidateArticle.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(candidate.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    metadata = candidate.extra_metadata or {}
+
+    return jsonify({
+        'id': candidate.id,
+        'url': candidate.url,
+        'title': candidate.title,
+        'snippet': candidate.snippet,
+        'author': candidate.author,
+        'published_date': candidate.published_date.isoformat() if candidate.published_date else None,
+        'relevance_score': candidate.relevance_score,
+        'keyword_score': candidate.keyword_score,
+        'recency_score': candidate.recency_score,
+        'source_weight': candidate.source_weight,
+        'status': candidate.status,
+        'source_name': candidate.news_source.name if candidate.news_source else None,
+        'source_type': candidate.news_source.source_type if candidate.news_source else None,
+        'discovered_at': candidate.discovered_at.isoformat() if candidate.discovered_at else None,
+        'triage_verdict': metadata.get('triage_verdict'),
+        'triage_reasoning': metadata.get('triage_reasoning'),
+        'content_source': metadata.get('content_source'),
+        'content_length': metadata.get('content_length'),
+        'content_format': metadata.get('content_format'),
+        'feed_url': metadata.get('feed_url'),
+        'enrichment_error': metadata.get('enrichment_error'),
+        'metadata': metadata,
+    })

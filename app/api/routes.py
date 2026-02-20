@@ -977,6 +977,9 @@ def get_candidates(publication_id):
                 'recency_score': c.recency_score,
                 'source_weight': c.source_weight,
                 'status': c.status,
+                'triage_verdict': (c.extra_metadata or {}).get('triage_verdict'),
+                'triage_reasoning': (c.extra_metadata or {}).get('triage_reasoning'),
+                'content_source': (c.extra_metadata or {}).get('content_source'),
                 'source': {
                     'id': c.news_source.id,
                     'name': c.news_source.name,
