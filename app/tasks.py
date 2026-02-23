@@ -149,6 +149,120 @@ def calculate_next_run(publication):
     return None
 
 
+def calculate_next_candidate_run(publication):
+    """Calculate the next candidate content generation run time."""
+    if not publication.candidate_schedule_time:
+        return None
+
+    now = datetime.utcnow()
+
+    try:
+        hour, minute = map(int, publication.candidate_schedule_time.split(':'))
+    except (ValueError, AttributeError):
+        return None
+
+    if publication.candidate_schedule_frequency == 'daily':
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        return next_run
+
+    elif publication.candidate_schedule_frequency == 'weekly':
+        target_day = publication.candidate_schedule_day_of_week or 0
+        current_day = now.weekday()
+        days_ahead = target_day - current_day
+        if days_ahead < 0:
+            days_ahead += 7
+
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        next_run += timedelta(days=days_ahead)
+
+        if days_ahead == 0 and next_run <= now:
+            next_run += timedelta(days=7)
+
+        return next_run
+
+    return None
+
+
+@celery.task(name='app.tasks.trigger_scheduled_candidate_content_workflow')
+def trigger_scheduled_candidate_content_workflow(publication_id):
+    """Trigger the n8n candidate content generation workflow for a publication."""
+    publication = Publication.query.get(publication_id)
+    if not publication:
+        return {'error': f'Publication {publication_id} not found'}
+
+    if not publication.is_active:
+        return {'error': f'Publication {publication_id} is not active'}
+
+    workflow_url = current_app.config.get('N8N_CANDIDATE_CONTENT_WORKFLOW_URL')
+    if not workflow_url:
+        return {'error': 'N8N_CANDIDATE_CONTENT_WORKFLOW_URL not configured'}
+
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=publication.id,
+        triggered_by_id=None,
+        workflow_type='candidate_content_generation',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    try:
+        requests.get(
+            workflow_url,
+            params={
+                'publication_id': publication.id,
+                'workflow_id': workflow_id
+            },
+            timeout=5
+        )
+        workflow_run.status = 'running'
+        db.session.commit()
+
+        return {
+            'success': True,
+            'workflow_id': workflow_id,
+            'publication_id': publication_id
+        }
+
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        db.session.commit()
+        return {'error': str(e), 'workflow_id': workflow_id}
+
+
+@celery.task(name='app.tasks.check_candidate_content_schedules')
+def check_candidate_content_schedules():
+    """Check if any publications are due for scheduled candidate content generation."""
+    now = datetime.utcnow()
+
+    due_publications = Publication.query.filter(
+        Publication.candidate_schedule_enabled == True,
+        Publication.is_active == True,
+        Publication.next_candidate_schedule_run <= now
+    ).all()
+
+    triggered_count = 0
+    for publication in due_publications:
+        trigger_scheduled_candidate_content_workflow.delay(publication.id)
+
+        publication.last_candidate_schedule_run = now
+        publication.next_candidate_schedule_run = calculate_next_candidate_run(publication)
+        triggered_count += 1
+
+    if triggered_count > 0:
+        db.session.commit()
+
+    return {
+        'checked_at': now.isoformat(),
+        'triggered_count': triggered_count
+    }
+
+
 @celery.task(name='app.tasks.check_research_schedules')
 def check_research_schedules():
     """

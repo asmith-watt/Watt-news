@@ -110,6 +110,14 @@ class Publication(db.Model):
     last_scheduled_run = db.Column(db.DateTime)
     next_scheduled_run = db.Column(db.DateTime, index=True)
 
+    # Candidate content generation schedule
+    candidate_schedule_enabled = db.Column(db.Boolean, default=False)
+    candidate_schedule_frequency = db.Column(db.String(32))  # 'daily' or 'weekly'
+    candidate_schedule_time = db.Column(db.String(5))  # 'HH:MM' format (UTC)
+    candidate_schedule_day_of_week = db.Column(db.Integer)  # 0-6 for weekly (Monday=0)
+    last_candidate_schedule_run = db.Column(db.DateTime)
+    next_candidate_schedule_run = db.Column(db.DateTime, index=True)
+
     # Research fields
     last_research_run = db.Column(db.DateTime, nullable=True)
     require_candidate_review = db.Column(db.Boolean, default=False)

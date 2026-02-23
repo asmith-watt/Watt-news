@@ -185,6 +185,50 @@
                 </div>
             </div>
 
+            <!-- Candidate Content Generation Schedule -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Candidate Content Generation Schedule</h3>
+
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        {{ form.candidate_schedule_enabled(class="mr-2", id="candidate_schedule_enabled") }}
+                        <span class="text-gray-700 font-bold">{{ form.candidate_schedule_enabled.label.text }}</span>
+                    </label>
+                    <p class="text-gray-500 text-sm mt-1">Automatically trigger content generation from candidates on a schedule</p>
+                </div>
+
+                <div id="candidate_schedule_options" class="{% if not form.candidate_schedule_enabled.data %}hidden{% endif %} space-y-4 mt-4 pl-4 border-l-2 border-purple-300">
+                    <div>
+                        {{ form.candidate_schedule_frequency.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.candidate_schedule_frequency(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", id="candidate_schedule_frequency") }}
+                    </div>
+
+                    <div>
+                        {{ form.candidate_schedule_time.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.candidate_schedule_time(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                        <p class="text-gray-500 text-sm mt-1">All times are in UTC</p>
+                    </div>
+
+                    <div id="candidate_day_of_week_container" class="{% if form.candidate_schedule_frequency.data != 'weekly' %}hidden{% endif %}">
+                        {{ form.candidate_schedule_day_of_week.label(class="block text-gray-700 font-bold mb-2") }}
+                        {{ form.candidate_schedule_day_of_week(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500") }}
+                    </div>
+
+                    {% if publication and publication.next_candidate_schedule_run %}
+                    <div class="p-3 bg-purple-50 rounded border border-purple-200">
+                        <p class="text-sm text-purple-800">
+                            <strong>Next scheduled run:</strong> {{ publication.next_candidate_schedule_run.strftime('%Y-%m-%d %H:%M') }} UTC
+                        </p>
+                        {% if publication.last_candidate_schedule_run %}
+                        <p class="text-sm text-purple-800">
+                            <strong>Last run:</strong> {{ publication.last_candidate_schedule_run.strftime('%Y-%m-%d %H:%M') }} UTC
+                        </p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="flex space-x-2">
                 {{ form.submit(class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer") }}
                 <a href="{{ url_for('admin.publications') }}"
@@ -283,6 +327,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 dayOfWeekContainer.classList.remove('hidden');
             } else {
                 dayOfWeekContainer.classList.add('hidden');
+            }
+        });
+    }
+
+    // Candidate content generation schedule toggles
+    const candidateScheduleEnabled = document.getElementById('candidate_schedule_enabled');
+    const candidateScheduleOptions = document.getElementById('candidate_schedule_options');
+    const candidateScheduleFrequency = document.getElementById('candidate_schedule_frequency');
+    const candidateDayOfWeekContainer = document.getElementById('candidate_day_of_week_container');
+
+    if (candidateScheduleEnabled) {
+        candidateScheduleEnabled.addEventListener('change', function() {
+            if (this.checked) {
+                candidateScheduleOptions.classList.remove('hidden');
+            } else {
+                candidateScheduleOptions.classList.add('hidden');
+            }
+        });
+    }
+
+    if (candidateScheduleFrequency) {
+        candidateScheduleFrequency.addEventListener('change', function() {
+            if (this.value === 'weekly') {
+                candidateDayOfWeekContainer.classList.remove('hidden');
+            } else {
+                candidateDayOfWeekContainer.classList.add('hidden');
             }
         });
     }

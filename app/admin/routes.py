@@ -8,7 +8,7 @@ from app import db
 from app.models import Publication, NewsSource, User, Role
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm
-from app.tasks import calculate_next_run
+from app.tasks import calculate_next_run, calculate_next_candidate_run
 
 
 def admin_required(f):
@@ -63,12 +63,20 @@ def new_publication():
             schedule_enabled=form.schedule_enabled.data,
             schedule_frequency=form.schedule_frequency.data or None,
             schedule_time=form.schedule_time.data or None,
-            schedule_day_of_week=int(form.schedule_day_of_week.data) if form.schedule_day_of_week.data else None
+            schedule_day_of_week=int(form.schedule_day_of_week.data) if form.schedule_day_of_week.data else None,
+            # Candidate content generation scheduling
+            candidate_schedule_enabled=form.candidate_schedule_enabled.data,
+            candidate_schedule_frequency=form.candidate_schedule_frequency.data or None,
+            candidate_schedule_time=form.candidate_schedule_time.data or None,
+            candidate_schedule_day_of_week=int(form.candidate_schedule_day_of_week.data) if form.candidate_schedule_day_of_week.data else None
         )
 
         # Calculate next scheduled run if scheduling is enabled
         if publication.schedule_enabled and publication.schedule_frequency and publication.schedule_time:
             publication.next_scheduled_run = calculate_next_run(publication)
+
+        if publication.candidate_schedule_enabled and publication.candidate_schedule_frequency and publication.candidate_schedule_time:
+            publication.next_candidate_schedule_run = calculate_next_candidate_run(publication)
 
         db.session.add(publication)
         db.session.commit()
@@ -84,9 +92,12 @@ def edit_publication(id):
     publication = Publication.query.get_or_404(id)
     form = PublicationForm(obj=publication)
 
-    # Pre-populate schedule_day_of_week as string for SelectField
-    if request.method == 'GET' and publication.schedule_day_of_week is not None:
-        form.schedule_day_of_week.data = str(publication.schedule_day_of_week)
+    # Pre-populate day_of_week fields as strings for SelectField
+    if request.method == 'GET':
+        if publication.schedule_day_of_week is not None:
+            form.schedule_day_of_week.data = str(publication.schedule_day_of_week)
+        if publication.candidate_schedule_day_of_week is not None:
+            form.candidate_schedule_day_of_week.data = str(publication.candidate_schedule_day_of_week)
 
     if form.validate_on_submit():
         publication.name = form.name.data
@@ -108,11 +119,22 @@ def edit_publication(id):
         publication.schedule_time = form.schedule_time.data or None
         publication.schedule_day_of_week = int(form.schedule_day_of_week.data) if form.schedule_day_of_week.data else None
 
+        # Candidate content generation scheduling
+        publication.candidate_schedule_enabled = form.candidate_schedule_enabled.data
+        publication.candidate_schedule_frequency = form.candidate_schedule_frequency.data or None
+        publication.candidate_schedule_time = form.candidate_schedule_time.data or None
+        publication.candidate_schedule_day_of_week = int(form.candidate_schedule_day_of_week.data) if form.candidate_schedule_day_of_week.data else None
+
         # Calculate next scheduled run if scheduling is enabled
         if publication.schedule_enabled and publication.schedule_frequency and publication.schedule_time:
             publication.next_scheduled_run = calculate_next_run(publication)
         else:
             publication.next_scheduled_run = None
+
+        if publication.candidate_schedule_enabled and publication.candidate_schedule_frequency and publication.candidate_schedule_time:
+            publication.next_candidate_schedule_run = calculate_next_candidate_run(publication)
+        else:
+            publication.next_candidate_schedule_run = None
 
         db.session.commit()
         flash('Publication updated successfully!', 'success')

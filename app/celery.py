@@ -23,6 +23,10 @@ def make_celery(app):
             'task': 'app.tasks.check_publication_schedules',
             'schedule': 60.0,  # Every 60 seconds
         },
+        'check-candidate-content-schedules': {
+            'task': 'app.tasks.check_candidate_content_schedules',
+            'schedule': 60.0,  # Every 60 seconds
+        },
         'check-research-schedules': {
             'task': 'app.tasks.check_research_schedules',
             'schedule': 3600.0,  # Every hour
