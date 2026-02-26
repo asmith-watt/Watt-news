@@ -58,7 +58,7 @@
     </a>
 </div>
 
-<div class="bg-white shadow-md rounded-lg overflow-hidden">
+<div class="bg-white shadow-md rounded-lg overflow-x-auto">
     {% if candidates.items %}
     <table class="min-w-full">
         <thead class="bg-gray-50">
@@ -121,7 +121,7 @@
                         {{ item.status }}
                     </span>
                 </td>
-                <td class="px-4 py-4 text-sm space-x-1">
+                <td class="px-4 py-4 text-sm space-x-1 whitespace-nowrap">
                     {% if item.status in ('new', 'rejected') %}
                     <button onclick="updateCandidateStatus({{ item.id }}, 'selected')"
                             class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">

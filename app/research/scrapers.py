@@ -2,6 +2,7 @@
 import io
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
@@ -33,6 +34,45 @@ class BaseScraper:
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json',
         }
+
+    def _firecrawl_request(self, endpoint: str, payload: dict,
+                           timeout: int = 60, max_retries: int = 2) -> Optional[dict]:
+        """POST to a Firecrawl endpoint with retry on transient connection errors and 429s.
+
+        Returns the parsed JSON response or None on failure.
+        """
+        backoff = 5
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(
+                    f'https://api.firecrawl.dev/v1/{endpoint}',
+                    headers=self._firecrawl_headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
+                if resp.status_code == 429 and attempt < max_retries - 1:
+                    retry_after = int(resp.headers.get('Retry-After', backoff))
+                    logger.info(f"Firecrawl /{endpoint} 429, retrying after {retry_after}s")
+                    time.sleep(retry_after)
+                    backoff *= 2
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Firecrawl /{endpoint} transient error (attempt {attempt + 1}), "
+                        f"retrying in {backoff}s: {e}"
+                    )
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                logger.error(f"Firecrawl /{endpoint} failed after {max_retries} attempts: {e}")
+                return None
+            except requests.RequestException as e:
+                logger.error(f"Firecrawl /{endpoint} request error: {e}")
+                return None
+        return None
 
     def scrape(self, source) -> List[DiscoveredItem]:
         raise NotImplementedError
@@ -298,17 +338,9 @@ class NewsSiteScraper(BaseScraper):
         if source.keywords:
             payload['search'] = source.keywords
 
-        try:
-            resp = requests.post(
-                'https://api.firecrawl.dev/v1/map',
-                headers=self._firecrawl_headers(),
-                json=payload,
-                timeout=60,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.error(f"Firecrawl /map failed for {source.url}: {e}")
+        data = self._firecrawl_request('map', payload)
+        if data is None:
+            logger.error(f"Firecrawl /map failed for {source.url}")
             return []
 
         items = []
@@ -324,17 +356,9 @@ class NewsSiteScraper(BaseScraper):
         return [i for i in items if i.url]
 
     def _scrape_links_fallback(self, source) -> List[DiscoveredItem]:
-        try:
-            resp = requests.post(
-                'https://api.firecrawl.dev/v1/scrape',
-                headers=self._firecrawl_headers(),
-                json={'url': source.url, 'formats': ['links']},
-                timeout=60,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.error(f"Firecrawl /scrape fallback failed for {source.url}: {e}")
+        data = self._firecrawl_request('scrape', {'url': source.url, 'formats': ['links']})
+        if data is None:
+            logger.error(f"Firecrawl /scrape fallback failed for {source.url}")
             return []
 
         items = []
@@ -607,17 +631,9 @@ class DataScraper(BaseScraper):
             logger.warning("FIRECRAWL_API_KEY not configured, cannot scrape landing page for PDFs")
             return []
 
-        try:
-            resp = requests.post(
-                'https://api.firecrawl.dev/v1/scrape',
-                headers=self._firecrawl_headers(),
-                json={'url': landing_url, 'formats': ['links']},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.error(f"DataScraper: Firecrawl scrape failed for {landing_url}: {e}")
+        data = self._firecrawl_request('scrape', {'url': landing_url, 'formats': ['links']}, timeout=30)
+        if data is None:
+            logger.error(f"DataScraper: Firecrawl scrape failed for {landing_url}")
             return []
 
         urls = []
