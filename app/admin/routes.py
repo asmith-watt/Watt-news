@@ -5,9 +5,9 @@ import json
 import secrets
 import requests
 from app import db
-from app.models import Publication, NewsSource, User, Role
+from app.models import Publication, NewsSource, User, Role, NewsletterTemplate
 from app.admin import bp
-from app.admin.forms import PublicationForm, NewsSourceForm, UserForm
+from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
 
 
@@ -410,3 +410,87 @@ def trigger_research(id):
 
     flash(f'Research triggered for {publication.name}!', 'success')
     return redirect(url_for('admin.publications'))
+
+
+# Newsletter Template CRUD
+
+@bp.route('/publications/<int:pub_id>/newsletter-templates')
+@login_required
+@admin_required
+def newsletter_templates(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    templates = NewsletterTemplate.query.filter_by(publication_id=pub_id).all()
+    return render_template('admin/newsletter_templates.html',
+                           title='Newsletter Templates',
+                           publication=publication,
+                           templates=templates)
+
+
+@bp.route('/publications/<int:pub_id>/newsletter-templates/new', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def new_newsletter_template(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    form = NewsletterTemplateForm()
+
+    if form.validate_on_submit():
+        template = NewsletterTemplate(
+            publication_id=pub_id,
+            name=form.name.data,
+            header_html=form.header_html.data,
+            footer_html=form.footer_html.data,
+            primary_color=form.primary_color.data,
+            secondary_color=form.secondary_color.data,
+            include_intro=form.include_intro.data,
+            max_articles=form.max_articles.data,
+            is_active=form.is_active.data,
+        )
+        db.session.add(template)
+        db.session.commit()
+        flash('Newsletter template created.', 'success')
+        return redirect(url_for('admin.newsletter_templates', pub_id=pub_id))
+
+    return render_template('admin/newsletter_template_form.html',
+                           title='New Newsletter Template',
+                           form=form,
+                           publication=publication)
+
+
+@bp.route('/newsletter-templates/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_newsletter_template(id):
+    template = NewsletterTemplate.query.get_or_404(id)
+    publication = template.publication
+    form = NewsletterTemplateForm(obj=template)
+
+    if form.validate_on_submit():
+        template.name = form.name.data
+        template.header_html = form.header_html.data
+        template.footer_html = form.footer_html.data
+        template.primary_color = form.primary_color.data
+        template.secondary_color = form.secondary_color.data
+        template.include_intro = form.include_intro.data
+        template.max_articles = form.max_articles.data
+        template.is_active = form.is_active.data
+        db.session.commit()
+        flash('Newsletter template updated.', 'success')
+        return redirect(url_for('admin.newsletter_templates', pub_id=publication.id))
+
+    return render_template('admin/newsletter_template_form.html',
+                           title='Edit Newsletter Template',
+                           form=form,
+                           publication=publication,
+                           template=template)
+
+
+@bp.route('/newsletter-templates/<int:id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_newsletter_template(id):
+    template = NewsletterTemplate.query.get_or_404(id)
+    pub_id = template.publication_id
+    db.session.delete(template)
+    db.session.commit()
+    flash('Newsletter template deleted.', 'success')
+    return redirect(url_for('admin.newsletter_templates', pub_id=pub_id))

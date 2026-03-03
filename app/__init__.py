@@ -29,11 +29,13 @@ def create_app(config_class=Config):
     from app.main import bp as main_bp
     from app.api import bp as api_bp
     from app.admin import bp as admin_bp
+    from app.newsletter import bp as newsletter_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(newsletter_bp)
 
     # Register CLI commands
     from app.cli import register_commands

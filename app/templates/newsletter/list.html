@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-gray-800">Newsletters</h1>
+    {% if current_publication %}
+    <a href="{{ url_for('newsletter.new', publication_id=current_publication.id) }}"
+       class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+        New Newsletter
+    </a>
+    {% endif %}
+</div>
+
+<div class="mb-6 flex items-center space-x-4">
+    <label for="publication-select" class="text-sm font-medium text-gray-700">Publication:</label>
+    <select id="publication-select"
+            onchange="window.location.href=this.value"
+            class="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+        {% for pub in publications %}
+        <option value="{{ url_for('newsletter.index', publication_id=pub.id) }}"
+                {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
+            {{ pub.name }}
+        </option>
+        {% endfor %}
+    </select>
+</div>
+
+<div class="bg-white shadow-md rounded-lg overflow-hidden">
+    {% if newsletters %}
+    <table class="min-w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Template</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Updated</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for nl in newsletters %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 font-medium">
+                    <a href="{{ url_for('newsletter.edit', id=nl.id) }}" class="text-blue-600 hover:underline">
+                        {{ nl.name }}
+                    </a>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">{{ nl.template.name }}</td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 text-xs rounded-full
+                        {% if nl.status == 'draft' %}bg-yellow-100 text-yellow-800
+                        {% elif nl.status == 'ready' %}bg-green-100 text-green-800
+                        {% endif %}">
+                        {{ nl.status }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">
+                    {{ nl.updated_at.strftime('%Y-%m-%d %H:%M') if nl.updated_at else nl.created_at.strftime('%Y-%m-%d %H:%M') }}
+                </td>
+                <td class="px-6 py-4 text-sm space-x-2">
+                    <a href="{{ url_for('newsletter.edit', id=nl.id) }}" class="text-blue-600 hover:underline">Edit</a>
+                    <a href="{{ url_for('newsletter.preview', id=nl.id) }}" target="_blank" class="text-green-600 hover:underline">Preview</a>
+                    <form method="POST" action="{{ url_for('newsletter.delete', id=nl.id) }}"
+                          class="inline"
+                          onsubmit="return confirm('Delete this newsletter?');">
+                        <button type="submit" class="text-red-600 hover:underline">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-12 text-center text-gray-500">
+        No newsletters yet.
+        {% if current_publication %}
+        <br><span class="text-sm">Create one to get started.</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

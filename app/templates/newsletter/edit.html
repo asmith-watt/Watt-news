@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-4 flex justify-between items-center">
+    <a href="{{ url_for('newsletter.index', publication_id=publication.id) }}" class="text-blue-600 hover:underline">&larr; Back to Newsletters</a>
+    <div class="flex items-center space-x-2">
+        <span id="save-indicator" class="text-sm text-gray-400"></span>
+        <span class="px-2 py-1 text-xs rounded-full
+            {% if newsletter.status == 'draft' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}"
+            id="status-badge">{{ newsletter.status }}</span>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Left Panel: Available Articles -->
+    <div>
+        <div class="bg-white shadow-md rounded-lg">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <h2 class="font-semibold text-gray-800">Available Articles</h2>
+                <input type="text" id="article-search" placeholder="Search articles..."
+                       class="mt-2 w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+            <div class="divide-y divide-gray-100 max-h-[calc(100vh-260px)] overflow-y-auto" id="available-articles">
+                {% for article in available_articles %}
+                <div class="px-4 py-3 hover:bg-gray-50 article-row {% if article.id in added_ids %}hidden{% endif %}"
+                     data-id="{{ article.id }}"
+                     data-title="{{ article.title }}"
+                     data-teaser="{{ article.teaser or '' }}"
+                     data-source="{{ article.source_name or '' }}"
+                     data-url="{{ article.source_url or '' }}">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1 min-w-0 mr-2">
+                            <p class="text-sm font-medium text-gray-900 truncate">{{ article.title }}</p>
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                {{ article.source_name or 'Unknown' }} &middot;
+                                {{ article.created_at.strftime('%b %d') }}
+                            </p>
+                        </div>
+                        <button onclick="addArticle({{ article.id }})"
+                                class="flex-shrink-0 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 add-btn">
+                            Add
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Newsletter Composition -->
+    <div>
+        <div class="bg-white shadow-md rounded-lg">
+            <div class="px-4 py-3 border-b bg-gray-50">
+                <input type="text" id="newsletter-name" value="{{ newsletter.name }}"
+                       class="w-full px-3 py-1.5 text-lg font-semibold border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            {% if template.include_intro %}
+            <div class="px-4 py-3 border-b">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-sm font-medium text-gray-700">Intro Paragraph</label>
+                    <button onclick="generateIntro()" id="gen-intro-btn"
+                            class="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600">
+                        Generate Intro
+                    </button>
+                </div>
+                <textarea id="intro-text" rows="3" placeholder="Write or generate an intro..."
+                          class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500">{{ newsletter.intro_text or '' }}</textarea>
+            </div>
+            {% endif %}
+
+            <div id="newsletter-items" class="divide-y divide-gray-100 min-h-[200px] max-h-[calc(100vh-420px)] overflow-y-auto">
+                {% for item in items %}
+                <div class="px-4 py-3 newsletter-item" data-content-id="{{ item.news_content_id }}">
+                    <div class="flex justify-between items-start mb-2">
+                        <p class="text-sm font-medium text-gray-900 flex-1 mr-2">{{ item.news_content.title }}</p>
+                        <div class="flex items-center space-x-1 flex-shrink-0">
+                            <button onclick="moveItem(this, -1)" class="p-1 text-gray-400 hover:text-gray-600" title="Move up">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                            </button>
+                            <button onclick="moveItem(this, 1)" class="p-1 text-gray-400 hover:text-gray-600" title="Move down">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <button onclick="removeItem(this)" class="p-1 text-red-400 hover:text-red-600" title="Remove">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 mb-2">
+                        <label class="text-xs text-gray-500">Display:</label>
+                        <select onchange="toggleSummary(this)" class="display-mode text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="title_teaser" {% if item.display_mode == 'title_teaser' %}selected{% endif %}>Title & Teaser</option>
+                            <option value="long_summary" {% if item.display_mode == 'long_summary' %}selected{% endif %}>Long Summary</option>
+                        </select>
+                        <button onclick="generateSummary(this, {{ item.news_content_id }})"
+                                class="gen-summary-btn px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 {% if item.display_mode != 'long_summary' %}hidden{% endif %}">
+                            Generate Summary
+                        </button>
+                    </div>
+                    <div class="summary-area {% if item.display_mode != 'long_summary' %}hidden{% endif %}">
+                        <textarea rows="4" placeholder="Summary text..."
+                                  class="custom-summary w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500">{{ item.custom_summary or '' }}</textarea>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Empty state -->
+            <div id="empty-state" class="px-6 py-12 text-center text-gray-400 {% if items %}hidden{% endif %}">
+                Add articles from the left panel
+            </div>
+
+            <!-- Bottom bar -->
+            <div class="px-4 py-3 border-t bg-gray-50 flex justify-between items-center">
+                <span class="text-sm text-gray-500">
+                    <span id="item-count">{{ items|length }}</span> / {{ template.max_articles }} articles
+                </span>
+                <div class="flex space-x-2">
+                    <button onclick="saveDraft()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                        Save Draft
+                    </button>
+                    <button onclick="markReady()" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                        Mark Ready
+                    </button>
+                    <a href="{{ url_for('newsletter.preview', id=newsletter.id) }}" target="_blank"
+                       class="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+                        Preview
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const newsletterId = {{ newsletter.id }};
+const maxArticles = {{ template.max_articles }};
+
+// Article search filter
+document.getElementById('article-search').addEventListener('input', function() {
+    const query = this.value.toLowerCase();
+    document.querySelectorAll('.article-row').forEach(row => {
+        if (row.classList.contains('hidden-added')) return;
+        const title = row.dataset.title.toLowerCase();
+        const source = row.dataset.source.toLowerCase();
+        row.style.display = (title.includes(query) || source.includes(query)) ? '' : 'none';
+    });
+});
+
+function addArticle(contentId) {
+    const count = document.querySelectorAll('.newsletter-item').length;
+    if (count >= maxArticles) {
+        alert('Maximum articles reached (' + maxArticles + ')');
+        return;
+    }
+
+    const row = document.querySelector(`.article-row[data-id="${contentId}"]`);
+    if (!row) return;
+
+    // Hide from available list
+    row.classList.add('hidden', 'hidden-added');
+
+    // Create newsletter item
+    const container = document.getElementById('newsletter-items');
+    const div = document.createElement('div');
+    div.className = 'px-4 py-3 newsletter-item';
+    div.dataset.contentId = contentId;
+    div.innerHTML = `
+        <div class="flex justify-between items-start mb-2">
+            <p class="text-sm font-medium text-gray-900 flex-1 mr-2">${esc(row.dataset.title)}</p>
+            <div class="flex items-center space-x-1 flex-shrink-0">
+                <button onclick="moveItem(this, -1)" class="p-1 text-gray-400 hover:text-gray-600" title="Move up">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                </button>
+                <button onclick="moveItem(this, 1)" class="p-1 text-gray-400 hover:text-gray-600" title="Move down">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <button onclick="removeItem(this)" class="p-1 text-red-400 hover:text-red-600" title="Remove">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2 mb-2">
+            <label class="text-xs text-gray-500">Display:</label>
+            <select onchange="toggleSummary(this)" class="display-mode text-xs border border-gray-300 rounded px-2 py-1">
+                <option value="title_teaser">Title & Teaser</option>
+                <option value="long_summary">Long Summary</option>
+            </select>
+            <button onclick="generateSummary(this, ${contentId})"
+                    class="gen-summary-btn px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 hidden">
+                Generate Summary
+            </button>
+        </div>
+        <div class="summary-area hidden">
+            <textarea rows="4" placeholder="Summary text..."
+                      class="custom-summary w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"></textarea>
+        </div>
+    `;
+    container.appendChild(div);
+
+    document.getElementById('empty-state').classList.add('hidden');
+    updateItemCount();
+}
+
+function removeItem(btn) {
+    const item = btn.closest('.newsletter-item');
+    const contentId = item.dataset.contentId;
+
+    // Show in available list again
+    const row = document.querySelector(`.article-row[data-id="${contentId}"]`);
+    if (row) {
+        row.classList.remove('hidden', 'hidden-added');
+    }
+
+    item.remove();
+    updateItemCount();
+
+    if (document.querySelectorAll('.newsletter-item').length === 0) {
+        document.getElementById('empty-state').classList.remove('hidden');
+    }
+}
+
+function moveItem(btn, direction) {
+    const item = btn.closest('.newsletter-item');
+    const container = document.getElementById('newsletter-items');
+    const items = Array.from(container.querySelectorAll('.newsletter-item'));
+    const index = items.indexOf(item);
+
+    if (direction === -1 && index > 0) {
+        container.insertBefore(item, items[index - 1]);
+    } else if (direction === 1 && index < items.length - 1) {
+        container.insertBefore(items[index + 1], item);
+    }
+}
+
+function toggleSummary(select) {
+    const item = select.closest('.newsletter-item');
+    const summaryArea = item.querySelector('.summary-area');
+    const genBtn = item.querySelector('.gen-summary-btn');
+
+    if (select.value === 'long_summary') {
+        summaryArea.classList.remove('hidden');
+        genBtn.classList.remove('hidden');
+    } else {
+        summaryArea.classList.add('hidden');
+        genBtn.classList.add('hidden');
+    }
+}
+
+function generateSummary(btn, contentId) {
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    fetch(`/newsletters/${newsletterId}/generate-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ news_content_id: contentId })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const item = btn.closest('.newsletter-item');
+            item.querySelector('.custom-summary').value = data.summary;
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => alert('Error: ' + err))
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Generate Summary';
+    });
+}
+
+function generateIntro() {
+    const btn = document.getElementById('gen-intro-btn');
+    const items = document.querySelectorAll('.newsletter-item');
+    if (items.length === 0) {
+        alert('Add articles first.');
+        return;
+    }
+
+    const ids = Array.from(items).map(i => parseInt(i.dataset.contentId));
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    fetch(`/newsletters/${newsletterId}/generate-intro`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ news_content_ids: ids })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('intro-text').value = data.intro;
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => alert('Error: ' + err))
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Generate Intro';
+    });
+}
+
+function collectData(status) {
+    const items = Array.from(document.querySelectorAll('.newsletter-item')).map(el => ({
+        news_content_id: parseInt(el.dataset.contentId),
+        display_mode: el.querySelector('.display-mode').value,
+        custom_summary: el.querySelector('.custom-summary') ? el.querySelector('.custom-summary').value : null,
+    }));
+
+    const data = {
+        name: document.getElementById('newsletter-name').value,
+        items: items,
+    };
+
+    const introEl = document.getElementById('intro-text');
+    if (introEl) {
+        data.intro_text = introEl.value;
+    }
+
+    if (status) {
+        data.status = status;
+    }
+
+    return data;
+}
+
+function saveDraft() {
+    const data = collectData('draft');
+    doSave(data);
+}
+
+function markReady() {
+    const data = collectData('ready');
+    doSave(data);
+}
+
+function doSave(data) {
+    const indicator = document.getElementById('save-indicator');
+    indicator.textContent = 'Saving...';
+    indicator.className = 'text-sm text-blue-500';
+
+    fetch(`/newsletters/${newsletterId}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            indicator.textContent = 'Saved';
+            indicator.className = 'text-sm text-green-500';
+            if (data.status) {
+                const badge = document.getElementById('status-badge');
+                badge.textContent = data.status;
+                badge.className = 'px-2 py-1 text-xs rounded-full ' +
+                    (data.status === 'draft' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800');
+            }
+            setTimeout(() => { indicator.textContent = ''; }, 3000);
+        } else {
+            indicator.textContent = 'Save failed';
+            indicator.className = 'text-sm text-red-500';
+        }
+    })
+    .catch(err => {
+        indicator.textContent = 'Save failed';
+        indicator.className = 'text-sm text-red-500';
+    });
+}
+
+function updateItemCount() {
+    document.getElementById('item-count').textContent = document.querySelectorAll('.newsletter-item').length;
+}
+
+function esc(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

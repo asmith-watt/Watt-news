@@ -1,0 +1,69 @@
+{# Standalone newsletter HTML for email/CMS. Uses inline styles for email compatibility. #}
+<div style="max-width: 600px; margin: 0 auto; font-family: Georgia, 'Times New Roman', serif; color: #333;">
+
+    {# Header #}
+    {% if template.header_html %}
+    {{ template.header_html|safe }}
+    {% endif %}
+
+    {# Intro paragraph #}
+    {% if template.include_intro and newsletter.intro_text %}
+    <div style="padding: 20px 24px; background-color: {{ template.secondary_color }}; border-left: 4px solid {{ template.primary_color }}; margin: 16px 0;">
+        <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #444; white-space: pre-line;">
+            {{ newsletter.intro_text }}
+        </p>
+    </div>
+    {% endif %}
+
+    {# Articles #}
+    {% for item in items %}
+    <div style="padding: 20px 0; {% if not loop.last %}border-bottom: 1px solid #e5e7eb;{% endif %}">
+        <h2 style="margin: 0 0 8px 0; font-size: 18px; line-height: 1.3;">
+            {% if item.news_content.source_url %}
+            <a href="{{ item.news_content.source_url }}" style="color: {{ template.primary_color }}; text-decoration: none;">
+                {{ item.news_content.title }}
+            </a>
+            {% else %}
+            <span style="color: {{ template.primary_color }};">{{ item.news_content.title }}</span>
+            {% endif %}
+        </h2>
+
+        {% if item.news_content.source_name %}
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: #888;">
+            {{ item.news_content.source_name }}
+            {% if item.news_content.published_date %}
+             &middot; {{ item.news_content.published_date.strftime('%B %d, %Y') }}
+            {% endif %}
+        </p>
+        {% endif %}
+
+        {% if item.display_mode == 'long_summary' and item.custom_summary %}
+        <div style="font-size: 14px; line-height: 1.6; color: #444; white-space: pre-line;">
+            {{ item.custom_summary }}
+        </div>
+        {% else %}
+        {# title_teaser mode #}
+        {% set display = item.news_content.get_display_version() %}
+        {% if display.teaser %}
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #555;">
+            {{ display.teaser }}
+        </p>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if not items %}
+    <div style="padding: 40px 0; text-align: center; color: #999;">
+        <p>No articles in this newsletter yet.</p>
+    </div>
+    {% endif %}
+
+    {# Footer #}
+    {% if template.footer_html %}
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 2px solid {{ template.primary_color }};">
+        {{ template.footer_html|safe }}
+    </div>
+    {% endif %}
+
+</div>

@@ -1,27 +1,28 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-6 flex justify-between items-center">
-    <h1 class="text-3xl font-bold text-gray-800">Content Production</h1>
+<div class="mb-6">
     {% if current_publication %}
     <div class="flex items-center space-x-3">
-        <form method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}"
-              class="flex items-center space-x-2"
-              onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate an article from this URL for {{ current_publication.name }}?');">
-            <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
-            <input type="url" id="source-url-input" name="source_url" required placeholder="Paste a source article URL..."
-                   class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
-            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
-                Generate Article
-            </button>
-        </form>
         <form method="POST" action="{{ url_for('main.trigger_candidate_content_workflow', id=current_publication.id) }}"
               class="inline"
               onsubmit="return confirm('Trigger candidate content generation workflow for {{ current_publication.name }}?');">
-            <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
-                Generate Content from Candidates
+            <button type="submit" class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
+                Generate from Candidates
             </button>
         </form>
+        <div class="bg-white shadow-sm rounded-lg border border-gray-200 px-4 py-3 flex items-center space-x-3">
+            <form method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}"
+                  class="flex items-center space-x-2"
+                  onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate an article from this URL for {{ current_publication.name }}?');">
+                <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
+                <input type="url" id="source-url-input" name="source_url" required placeholder="Paste a source article URL..."
+                       class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
+                    Generate Article
+                </button>
+            </form>
+        </div>
     </div>
     {% endif %}
 </div>

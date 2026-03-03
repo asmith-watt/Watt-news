@@ -125,6 +125,8 @@ class Publication(db.Model):
     news_sources = db.relationship('NewsSource', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     news_content = db.relationship('NewsContent', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     candidate_articles = db.relationship('CandidateArticle', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
+    newsletter_templates = db.relationship('NewsletterTemplate', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
+    newsletters = db.relationship('Newsletter', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<Publication {self.name}>'
@@ -327,6 +329,58 @@ class CandidateArticle(db.Model):
 
     def __repr__(self):
         return f'<CandidateArticle {self.title[:50] if self.title else self.url[:50]}>'
+
+
+class NewsletterTemplate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    header_html = db.Column(db.Text)
+    footer_html = db.Column(db.Text)
+    primary_color = db.Column(db.String(7), default='#1a2b3c')
+    secondary_color = db.Column(db.String(7), default='#f5f5f5')
+    include_intro = db.Column(db.Boolean, default=True)
+    max_articles = db.Column(db.Integer, default=10)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    newsletters = db.relationship('Newsletter', backref='template', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<NewsletterTemplate {self.name}>'
+
+
+class Newsletter(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
+    template_id = db.Column(db.Integer, db.ForeignKey('newsletter_template.id'), nullable=False)
+    name = db.Column(db.String(256), nullable=False)
+    intro_text = db.Column(db.Text)
+    status = db.Column(db.String(32), default='draft')
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    created_by = db.relationship('User', backref='newsletters')
+    items = db.relationship('NewsletterItem', backref='newsletter', lazy='dynamic',
+                            cascade='all, delete-orphan', order_by='NewsletterItem.sort_order')
+
+    def __repr__(self):
+        return f'<Newsletter {self.name}>'
+
+
+class NewsletterItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    newsletter_id = db.Column(db.Integer, db.ForeignKey('newsletter.id'), nullable=False)
+    news_content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False)
+    display_mode = db.Column(db.String(32), default='title_teaser')
+    sort_order = db.Column(db.Integer, default=0)
+    custom_summary = db.Column(db.Text)
+
+    news_content = db.relationship('NewsContent', backref='newsletter_items')
+
+    def __repr__(self):
+        return f'<NewsletterItem {self.id} newsletter={self.newsletter_id}>'
 
 
 @login_manager.user_loader

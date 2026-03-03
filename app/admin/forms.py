@@ -2,6 +2,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, BooleanField, SubmitField, PasswordField, SelectMultipleField, TextAreaField, SelectField, IntegerField
 from wtforms.validators import DataRequired, Optional, Email, EqualTo, ValidationError, NumberRange
 from app.models import User, SourceType
+from app.newsletter.forms import NewsletterTemplateForm  # noqa: F401 — re-exported for admin routes
 
 
 class PublicationForm(FlaskForm):

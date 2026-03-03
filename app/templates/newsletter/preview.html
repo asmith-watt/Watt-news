@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview: {{ newsletter.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <!-- Sticky top bar -->
+    <div class="sticky top-0 z-10 bg-white shadow-md px-4 py-2 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <span class="font-semibold text-gray-800">{{ newsletter.name }}</span>
+            <span class="px-2 py-1 text-xs rounded-full
+                {% if newsletter.status == 'draft' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">
+                {{ newsletter.status }}
+            </span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="copyHtml()" id="copy-btn"
+                    class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                Copy HTML
+            </button>
+            <a href="{{ url_for('newsletter.edit', id=newsletter.id) }}"
+               class="px-4 py-1.5 bg-gray-500 text-white text-sm rounded hover:bg-gray-600">
+                Back to Editor
+            </a>
+        </div>
+    </div>
+
+    <!-- Newsletter preview -->
+    <div class="max-w-3xl mx-auto my-6 bg-white shadow-lg">
+        {{ rendered_html|safe }}
+    </div>
+
+    <script>
+    function copyHtml() {
+        fetch('{{ url_for("newsletter.html", id=newsletter.id) }}')
+            .then(r => r.text())
+            .then(html => {
+                navigator.clipboard.writeText(html).then(() => {
+                    const btn = document.getElementById('copy-btn');
+                    btn.textContent = 'Copied!';
+                    btn.className = 'px-4 py-1.5 bg-green-600 text-white text-sm rounded';
+                    setTimeout(() => {
+                        btn.textContent = 'Copy HTML';
+                        btn.className = 'px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700';
+                    }, 2000);
+                });
+            })
+            .catch(err => alert('Failed to copy: ' + err));
+    }
+    </script>
+</body>
+</html>
