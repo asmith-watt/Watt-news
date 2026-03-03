@@ -2,23 +2,17 @@
 
 {% block content %}
 <div class="mb-6 flex justify-between items-center">
-    <h1 class="text-3xl font-bold text-gray-800">News Dashboard</h1>
+    <h1 class="text-3xl font-bold text-gray-800">Content Production</h1>
     {% if current_publication %}
     <div class="flex items-center space-x-3">
         <form method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}"
               class="flex items-center space-x-2"
-              onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate articles from this URL for {{ current_publication.name }}?');">
-            <input type="url" name="source_url" required placeholder="https://example.com/article"
+              onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate an article from this URL for {{ current_publication.name }}?');">
+            <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
+            <input type="url" id="source-url-input" name="source_url" required placeholder="Paste a source article URL..."
                    class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
             <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
-                Submit URL
-            </button>
-        </form>
-        <form method="POST" action="{{ url_for('main.trigger_content_workflow', id=current_publication.id) }}"
-              class="inline"
-              onsubmit="return confirm('Trigger Perplexity content generation workflow for {{ current_publication.name }}?');">
-            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 whitespace-nowrap">
-                Generate Content from Perplexity
+                Generate Article
             </button>
         </form>
         <form method="POST" action="{{ url_for('main.trigger_candidate_content_workflow', id=current_publication.id) }}"
