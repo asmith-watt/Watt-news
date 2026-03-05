@@ -57,6 +57,8 @@ def new_publication():
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
             is_active=form.is_active.data,
+            # Notifications
+            notification_emails=form.notification_emails.data or None,
             # Research fields
             require_candidate_review=form.require_candidate_review.data,
             # Scheduling fields
@@ -109,6 +111,9 @@ def edit_publication(id):
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
         publication.is_active = form.is_active.data
+
+        # Notifications
+        publication.notification_emails = form.notification_emails.data or None
 
         # Research fields
         publication.require_candidate_review = form.require_candidate_review.data

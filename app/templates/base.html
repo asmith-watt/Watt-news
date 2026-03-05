@@ -15,9 +15,9 @@
                     <a href="{{ url_for('main.dashboard') }}">
                         <img src="https://www.wattglobalmedia.com/wp-content/uploads/2024/03/WATT-Logo.svg" alt="WATT" class="h-8 brightness-0 invert">
                     </a>
+                    <a href="{{ url_for('main.candidates') }}" class="hover:text-blue-200">Candidates</a>
                     <a href="{{ url_for('main.dashboard') }}" class="hover:text-blue-200">Content Production</a>
                     <a href="{{ url_for('newsletter.index') }}" class="hover:text-blue-200">Newsletters</a>
-                    <a href="{{ url_for('main.candidates') }}" class="hover:text-blue-200">Candidates</a>
                     {% if current_user.has_role('admin') %}
                     <a href="{{ url_for('admin.index') }}" class="hover:text-blue-200">Admin</a>
                     {% endif %}

@@ -122,6 +122,9 @@ class Publication(db.Model):
     last_research_run = db.Column(db.DateTime, nullable=True)
     require_candidate_review = db.Column(db.Boolean, default=False)
 
+    # Notification settings
+    notification_emails = db.Column(db.Text)  # Comma-separated email addresses
+
     news_sources = db.relationship('NewsSource', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     news_content = db.relationship('NewsContent', backref='publication', lazy='dynamic', cascade='all, delete-orphan')
     candidate_articles = db.relationship('CandidateArticle', backref='publication', lazy='dynamic', cascade='all, delete-orphan')

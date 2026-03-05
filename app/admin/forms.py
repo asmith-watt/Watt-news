@@ -16,6 +16,9 @@ class PublicationForm(FlaskForm):
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
     is_active = BooleanField('Active')
 
+    # Notifications
+    notification_emails = TextAreaField('Notification Emails', validators=[Optional()])
+
     # Research fields
     require_candidate_review = BooleanField('Require Candidate Review')
 

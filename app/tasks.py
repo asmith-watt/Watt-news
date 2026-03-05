@@ -13,6 +13,15 @@ from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource
 logger = logging.getLogger(__name__)
 
 
+def _notify_safe(publication, job_type, stats, errors=None):
+    """Fire-and-forget notification wrapper — never raises."""
+    try:
+        from app.notifications import send_job_notification
+        send_job_notification(publication, job_type, stats, errors)
+    except Exception as e:
+        logger.error(f'Notification failed for {job_type} on pub {publication.id}: {e}')
+
+
 @celery.task(name='app.tasks.trigger_scheduled_content_workflow')
 def trigger_scheduled_content_workflow(publication_id):
     """
@@ -55,17 +64,21 @@ def trigger_scheduled_content_workflow(publication_id):
         workflow_run.status = 'running'
         db.session.commit()
 
-        return {
+        result = {
             'success': True,
             'workflow_id': workflow_id,
             'publication_id': publication_id
         }
+        _notify_safe(publication, 'content_generation', result)
+        return result
 
     except requests.exceptions.RequestException as e:
         workflow_run.status = 'failed'
         workflow_run.message = str(e)
         db.session.commit()
-        return {'error': str(e), 'workflow_id': workflow_id}
+        result = {'error': str(e), 'workflow_id': workflow_id}
+        _notify_safe(publication, 'content_generation', result)
+        return result
 
 
 @celery.task(name='app.tasks.check_publication_schedules')
@@ -222,17 +235,21 @@ def trigger_scheduled_candidate_content_workflow(publication_id):
         workflow_run.status = 'running'
         db.session.commit()
 
-        return {
+        result = {
             'success': True,
             'workflow_id': workflow_id,
             'publication_id': publication_id
         }
+        _notify_safe(publication, 'candidate_content_generation', result)
+        return result
 
     except requests.exceptions.RequestException as e:
         workflow_run.status = 'failed'
         workflow_run.message = str(e)
         db.session.commit()
-        return {'error': str(e), 'workflow_id': workflow_id}
+        result = {'error': str(e), 'workflow_id': workflow_id}
+        _notify_safe(publication, 'candidate_content_generation', result)
+        return result
 
 
 @celery.task(name='app.tasks.check_candidate_content_schedules')
@@ -656,4 +673,5 @@ def research_publication_sources(self, publication_id):
 
     stats.pop('_free_enrichments', None)
     logger.info(f"Research complete for publication {publication_id}: {stats}")
+    _notify_safe(publication, 'research', stats)
     return stats

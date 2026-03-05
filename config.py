@@ -52,5 +52,10 @@ class Config:
     TRIAGE_MAX_BATCH_SIZE = int(os.environ.get('TRIAGE_MAX_BATCH_SIZE', 40))
     TRIAGE_FETCH_BUDGET = int(os.environ.get('TRIAGE_FETCH_BUDGET', 5))
 
+    # Mailgun email notifications
+    MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
+    MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN')
+    MAILGUN_FROM = os.environ.get('MAILGUN_FROM', 'WATT Automation <noreply@mg.example.com>')
+
     # Pagination
     ITEMS_PER_PAGE = 20
