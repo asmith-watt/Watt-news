@@ -56,6 +56,9 @@ def new_publication():
             access_api_key=form.access_api_key.data,
             cms_url=form.cms_url.data,
             cms_api_key=form.cms_api_key.data,
+            ghost_url=form.ghost_url.data or None,
+            ghost_admin_api_key=form.ghost_admin_api_key.data or None,
+            ghost_newsletter_slug=form.ghost_newsletter_slug.data or None,
             is_active=form.is_active.data,
             # Notifications
             notification_emails=form.notification_emails.data or None,
@@ -110,6 +113,9 @@ def edit_publication(id):
         publication.access_api_key = form.access_api_key.data
         publication.cms_url = form.cms_url.data
         publication.cms_api_key = form.cms_api_key.data
+        publication.ghost_url = form.ghost_url.data or None
+        publication.ghost_admin_api_key = form.ghost_admin_api_key.data or None
+        publication.ghost_newsletter_slug = form.ghost_newsletter_slug.data or None
         publication.is_active = form.is_active.data
 
         # Notifications

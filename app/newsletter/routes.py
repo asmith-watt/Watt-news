@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
@@ -237,6 +238,63 @@ def html(id):
     newsletter = Newsletter.query.get_or_404(id)
     rendered_html = _render_newsletter_html(newsletter)
     return rendered_html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@bp.route('/<int:id>/push-ghost', methods=['POST'])
+@login_required
+def push_to_ghost(id):
+    """Push a newsletter to Ghost CMS."""
+    import requests as req
+    from app.ghost import create_ghost_newsletter_post
+
+    newsletter = Newsletter.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(newsletter.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    if newsletter.pushed_to_ghost:
+        return jsonify({'error': 'This newsletter has already been pushed to Ghost'}), 400
+
+    publication = newsletter.publication
+    if not publication.ghost_url or not publication.ghost_admin_api_key:
+        return jsonify({'error': 'Ghost configuration not set for this publication'}), 400
+
+    try:
+        # Render newsletter HTML (already fully rendered with inline styles)
+        html = _render_newsletter_html(newsletter)
+
+        result = create_ghost_newsletter_post(
+            ghost_url=publication.ghost_url,
+            api_key=publication.ghost_admin_api_key,
+            title=newsletter.name,
+            html=html,
+            newsletter_slug=publication.ghost_newsletter_slug,
+        )
+
+        # Extract post info from response
+        ghost_post = result.get('posts', [{}])[0]
+        newsletter.pushed_to_ghost = True
+        newsletter.ghost_post_id = ghost_post.get('id')
+        newsletter.ghost_post_url = ghost_post.get('url')
+        newsletter.ghost_pushed_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Newsletter published to Ghost as draft',
+            'ghost_post_id': newsletter.ghost_post_id,
+            'ghost_post_url': newsletter.ghost_post_url,
+        })
+
+    except req.exceptions.HTTPError as e:
+        try:
+            error_detail = e.response.json()
+        except Exception:
+            error_detail = e.response.text if e.response else str(e)
+        return jsonify({'error': f'Ghost API error: {error_detail}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
 
 @bp.route('/<int:id>/delete', methods=['POST'])

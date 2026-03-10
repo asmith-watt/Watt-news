@@ -253,6 +253,71 @@ def push_version_to_cms(id, version_id):
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
 
+@bp.route('/content/<int:id>/version/<int:version_id>/push-ghost', methods=['POST'])
+@login_required
+def push_version_to_ghost(id, version_id):
+    """Push a specific version of content to Ghost CMS."""
+    import markdown as md
+    from app.ghost import create_ghost_post
+
+    content = NewsContent.query.get_or_404(id)
+    version = ContentVersion.query.get_or_404(version_id)
+
+    if version.content_id != content.id:
+        return jsonify({'error': 'Version does not belong to this content'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    if version.pushed_to_ghost:
+        return jsonify({'error': 'This version has already been pushed to Ghost'}), 400
+
+    publication = content.publication
+    if not publication.ghost_url or not publication.ghost_admin_api_key:
+        return jsonify({'error': 'Ghost configuration not set for this publication'}), 400
+
+    try:
+        # Convert Markdown content to HTML
+        html = md.markdown(version.content, extensions=['nl2br', 'fenced_code', 'tables'])
+
+        # Build tags from keywords
+        tags = [t.strip() for t in content.keywords.split(',')] if content.keywords else None
+
+        result = create_ghost_post(
+            ghost_url=publication.ghost_url,
+            api_key=publication.ghost_admin_api_key,
+            title=content.title,
+            html=html,
+            excerpt=version.teaser,
+            tags=tags,
+        )
+
+        # Extract post info from response
+        ghost_post = result.get('posts', [{}])[0]
+        version.pushed_to_ghost = True
+        version.ghost_post_id = ghost_post.get('id')
+        version.ghost_post_url = ghost_post.get('url')
+        version.ghost_pushed_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'{version.ai_provider.title()} version published to Ghost as draft',
+            'ghost_post_id': version.ghost_post_id,
+            'ghost_post_url': version.ghost_post_url,
+        })
+
+    except requests.exceptions.HTTPError as e:
+        try:
+            error_detail = e.response.json()
+        except Exception:
+            error_detail = e.response.text if e.response else str(e)
+        return jsonify({'error': f'Ghost API error: {error_detail}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+
 @bp.route('/content/<int:id>/select-version/<int:version_id>', methods=['POST'])
 @login_required
 def select_version(id, version_id):

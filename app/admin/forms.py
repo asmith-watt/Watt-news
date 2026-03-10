@@ -14,6 +14,9 @@ class PublicationForm(FlaskForm):
     access_api_key = StringField('Access API Key', validators=[Optional()])
     cms_url = StringField('CMS URL', validators=[Optional()])
     cms_api_key = StringField('CMS API Key', validators=[Optional()])
+    ghost_url = StringField('Ghost URL', validators=[Optional()])
+    ghost_admin_api_key = StringField('Ghost Admin API Key', validators=[Optional()])
+    ghost_newsletter_slug = StringField('Ghost Newsletter Slug', validators=[Optional()])
     is_active = BooleanField('Active')
 
     # Notifications

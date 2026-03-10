@@ -99,6 +99,9 @@ class Publication(db.Model):
     access_api_key = db.Column(db.String(256))
     cms_url = db.Column(db.String(256))
     cms_api_key = db.Column(db.String(256))
+    ghost_url = db.Column(db.String(256))
+    ghost_admin_api_key = db.Column(db.String(256))
+    ghost_newsletter_slug = db.Column(db.String(128))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -223,6 +226,12 @@ class ContentVersion(db.Model):
     cms_id = db.Column(db.String(128))
     pushed_at = db.Column(db.DateTime)
     pushed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+    # Ghost push tracking
+    pushed_to_ghost = db.Column(db.Boolean, default=False)
+    ghost_post_id = db.Column(db.String(128))
+    ghost_post_url = db.Column(db.String(512))
+    ghost_pushed_at = db.Column(db.DateTime)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -363,6 +372,12 @@ class Newsletter(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Ghost push tracking
+    pushed_to_ghost = db.Column(db.Boolean, default=False)
+    ghost_post_id = db.Column(db.String(128))
+    ghost_post_url = db.Column(db.String(512))
+    ghost_pushed_at = db.Column(db.DateTime)
 
     created_by = db.relationship('User', backref='newsletters')
     items = db.relationship('NewsletterItem', backref='newsletter', lazy='dynamic',

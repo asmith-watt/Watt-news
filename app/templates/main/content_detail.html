@@ -186,6 +186,20 @@
                                 Pushed &#10003;
                             </span>
                             {% endif %}
+                            {% if content.publication.ghost_url and content.publication.ghost_admin_api_key %}
+                                {% if not version.pushed_to_ghost %}
+                                <button onclick="pushVersionToGhost({{ version.id }})"
+                                        class="px-3 py-1 text-sm bg-orange-600 text-white rounded hover:bg-orange-700">
+                                    Publish to Ghost
+                                </button>
+                                {% else %}
+                                <a href="{{ version.ghost_post_url }}" target="_blank"
+                                   class="px-3 py-1 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
+                                   title="Published {{ version.ghost_pushed_at.strftime('%Y-%m-%d %H:%M') if version.ghost_pushed_at else '' }}">
+                                    Ghost &#10003;
+                                </a>
+                                {% endif %}
+                            {% endif %}
                         </div>
                     </div>
 
@@ -712,6 +726,31 @@ function pushVersionToCMS(versionId) {
     }
 
     fetch('/content/{{ content.id }}/version/' + versionId + '/push', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function pushVersionToGhost(versionId) {
+    if (!confirm('Publish this version to Ghost as a draft?')) {
+        return;
+    }
+
+    fetch('/content/{{ content.id }}/version/' + versionId + '/push-ghost', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

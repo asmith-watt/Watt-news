@@ -21,6 +21,19 @@
                     class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                 Copy HTML
             </button>
+            {% if newsletter.publication.ghost_url and newsletter.publication.ghost_admin_api_key %}
+                {% if not newsletter.pushed_to_ghost %}
+                <button onclick="pushToGhost()" id="ghost-btn"
+                        class="px-4 py-1.5 bg-orange-600 text-white text-sm rounded hover:bg-orange-700">
+                    Publish to Ghost
+                </button>
+                {% else %}
+                <a href="{{ newsletter.ghost_post_url }}" target="_blank"
+                   class="px-4 py-1.5 bg-orange-100 text-orange-700 text-sm rounded hover:bg-orange-200">
+                    Published to Ghost &#10003;
+                </a>
+                {% endif %}
+            {% endif %}
             <a href="{{ url_for('newsletter.edit', id=newsletter.id) }}"
                class="px-4 py-1.5 bg-gray-500 text-white text-sm rounded hover:bg-gray-600">
                 Back to Editor
@@ -49,6 +62,39 @@
                 });
             })
             .catch(err => alert('Failed to copy: ' + err));
+    }
+
+    function pushToGhost() {
+        if (!confirm('Publish this newsletter to Ghost as a draft?')) return;
+
+        const btn = document.getElementById('ghost-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Publishing...';
+        btn.disabled = true;
+        btn.className = 'px-4 py-1.5 bg-gray-400 text-white text-sm rounded cursor-not-allowed';
+
+        fetch('{{ url_for("newsletter.push_to_ghost", id=newsletter.id) }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+                btn.textContent = originalText;
+                btn.disabled = false;
+                btn.className = 'px-4 py-1.5 bg-orange-600 text-white text-sm rounded hover:bg-orange-700';
+            }
+        })
+        .catch(err => {
+            alert('Error: ' + err);
+            btn.textContent = originalText;
+            btn.disabled = false;
+            btn.className = 'px-4 py-1.5 bg-orange-600 text-white text-sm rounded hover:bg-orange-700';
+        });
     }
     </script>
 </body>

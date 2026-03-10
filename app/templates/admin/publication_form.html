@@ -115,6 +115,44 @@
                 <p class="text-gray-500 text-sm mt-1">API key for authenticating to downstream CMS</p>
             </div>
 
+            <!-- Ghost CMS Section -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Ghost CMS</h3>
+
+                <div class="mb-4">
+                    {{ form.ghost_url.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.ghost_url(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", placeholder="https://your-site.ghost.io") }}
+                    {% if form.ghost_url.errors %}
+                        {% for error in form.ghost_url.errors %}
+                        <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                        {% endfor %}
+                    {% endif %}
+                    <p class="text-gray-500 text-sm mt-1">Base URL of your Ghost instance</p>
+                </div>
+
+                <div class="mb-4">
+                    {{ form.ghost_admin_api_key.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.ghost_admin_api_key(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm", placeholder="key_id:secret") }}
+                    {% if form.ghost_admin_api_key.errors %}
+                        {% for error in form.ghost_admin_api_key.errors %}
+                        <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                        {% endfor %}
+                    {% endif %}
+                    <p class="text-gray-500 text-sm mt-1">Ghost Admin API key in <code>key_id:secret</code> format (found in Ghost Admin &rarr; Settings &rarr; Integrations)</p>
+                </div>
+
+                <div class="mb-4">
+                    {{ form.ghost_newsletter_slug.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.ghost_newsletter_slug(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", placeholder="default-newsletter") }}
+                    {% if form.ghost_newsletter_slug.errors %}
+                        {% for error in form.ghost_newsletter_slug.errors %}
+                        <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                        {% endfor %}
+                    {% endif %}
+                    <p class="text-gray-500 text-sm mt-1">Slug of the Ghost newsletter to send emails through (optional)</p>
+                </div>
+            </div>
+
             <div class="mb-6">
                 <label class="flex items-center">
                     {{ form.is_active(class="mr-2") }}
