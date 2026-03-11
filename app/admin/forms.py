@@ -17,6 +17,8 @@ class PublicationForm(FlaskForm):
     ghost_url = StringField('Ghost URL', validators=[Optional()])
     ghost_admin_api_key = StringField('Ghost Admin API Key', validators=[Optional()])
     ghost_newsletter_slug = StringField('Ghost Newsletter Slug', validators=[Optional()])
+    sponsy_api_key = StringField('Sponsy API Key', validators=[Optional()])
+    sponsy_publication_id = StringField('Sponsy Publication ID', validators=[Optional()])
     is_active = BooleanField('Active')
 
     # Notifications

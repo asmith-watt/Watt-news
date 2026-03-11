@@ -102,6 +102,8 @@ class Publication(db.Model):
     ghost_url = db.Column(db.String(256))
     ghost_admin_api_key = db.Column(db.String(256))
     ghost_newsletter_slug = db.Column(db.String(128))
+    sponsy_api_key = db.Column(db.String(256))
+    sponsy_publication_id = db.Column(db.String(128))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -353,6 +355,9 @@ class NewsletterTemplate(db.Model):
     secondary_color = db.Column(db.String(7), default='#f5f5f5')
     include_intro = db.Column(db.Boolean, default=True)
     max_articles = db.Column(db.Integer, default=10)
+    sponsy_top_placement_id = db.Column(db.String(128))
+    sponsy_mid_placement_id = db.Column(db.String(128))
+    sponsy_mid_position = db.Column(db.Integer, default=3)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

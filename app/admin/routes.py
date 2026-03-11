@@ -59,6 +59,8 @@ def new_publication():
             ghost_url=form.ghost_url.data or None,
             ghost_admin_api_key=form.ghost_admin_api_key.data or None,
             ghost_newsletter_slug=form.ghost_newsletter_slug.data or None,
+            sponsy_api_key=form.sponsy_api_key.data or None,
+            sponsy_publication_id=form.sponsy_publication_id.data or None,
             is_active=form.is_active.data,
             # Notifications
             notification_emails=form.notification_emails.data or None,
@@ -116,6 +118,8 @@ def edit_publication(id):
         publication.ghost_url = form.ghost_url.data or None
         publication.ghost_admin_api_key = form.ghost_admin_api_key.data or None
         publication.ghost_newsletter_slug = form.ghost_newsletter_slug.data or None
+        publication.sponsy_api_key = form.sponsy_api_key.data or None
+        publication.sponsy_publication_id = form.sponsy_publication_id.data or None
         publication.is_active = form.is_active.data
 
         # Notifications
@@ -454,6 +458,9 @@ def new_newsletter_template(pub_id):
             secondary_color=form.secondary_color.data,
             include_intro=form.include_intro.data,
             max_articles=form.max_articles.data,
+            sponsy_top_placement_id=form.sponsy_top_placement_id.data or None,
+            sponsy_mid_placement_id=form.sponsy_mid_placement_id.data or None,
+            sponsy_mid_position=form.sponsy_mid_position.data or 3,
             is_active=form.is_active.data,
         )
         db.session.add(template)
@@ -483,6 +490,9 @@ def edit_newsletter_template(id):
         template.secondary_color = form.secondary_color.data
         template.include_intro = form.include_intro.data
         template.max_articles = form.max_articles.data
+        template.sponsy_top_placement_id = form.sponsy_top_placement_id.data or None
+        template.sponsy_mid_placement_id = form.sponsy_mid_placement_id.data or None
+        template.sponsy_mid_position = form.sponsy_mid_position.data or 3
         template.is_active = form.is_active.data
         db.session.commit()
         flash('Newsletter template updated.', 'success')

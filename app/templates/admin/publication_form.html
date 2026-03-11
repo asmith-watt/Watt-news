@@ -153,6 +153,33 @@
                 </div>
             </div>
 
+            <!-- Sponsy Section -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Sponsy</h3>
+
+                <div class="mb-4">
+                    {{ form.sponsy_api_key.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.sponsy_api_key(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm") }}
+                    {% if form.sponsy_api_key.errors %}
+                        {% for error in form.sponsy_api_key.errors %}
+                        <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                        {% endfor %}
+                    {% endif %}
+                    <p class="text-gray-500 text-sm mt-1">API key from Sponsy (x-api-key header)</p>
+                </div>
+
+                <div class="mb-4">
+                    {{ form.sponsy_publication_id.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.sponsy_publication_id(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm") }}
+                    {% if form.sponsy_publication_id.errors %}
+                        {% for error in form.sponsy_publication_id.errors %}
+                        <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                        {% endfor %}
+                    {% endif %}
+                    <p class="text-gray-500 text-sm mt-1">Your Sponsy publication ID</p>
+                </div>
+            </div>
+
             <div class="mb-6">
                 <label class="flex items-center">
                     {{ form.is_active(class="mr-2") }}

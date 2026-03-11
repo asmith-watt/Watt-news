@@ -64,6 +64,38 @@
                 {% endfor %}
             </div>
 
+            <!-- Sponsy Ad Slots -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Sponsy Ad Slots</h3>
+
+                <div class="mb-4">
+                    {{ form.sponsy_top_placement_id.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.sponsy_top_placement_id(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm") }}
+                    {% for error in form.sponsy_top_placement_id.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                    <p class="text-gray-500 text-sm mt-1">Placement ID for the ad shown after the intro, before articles.</p>
+                </div>
+
+                <div class="mb-4">
+                    {{ form.sponsy_mid_placement_id.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.sponsy_mid_placement_id(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm") }}
+                    {% for error in form.sponsy_mid_placement_id.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                    <p class="text-gray-500 text-sm mt-1">Placement ID for the ad inserted mid-content between articles.</p>
+                </div>
+
+                <div class="mb-4">
+                    {{ form.sponsy_mid_position.label(class="block text-gray-700 font-bold mb-2") }}
+                    {{ form.sponsy_mid_position(class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500", type="number", min="1", max="50") }}
+                    {% for error in form.sponsy_mid_position.errors %}
+                    <p class="text-red-500 text-sm mt-1">{{ error }}</p>
+                    {% endfor %}
+                    <p class="text-gray-500 text-sm mt-1">Insert the mid-content ad after this article number (e.g., 3 = after the 3rd article).</p>
+                </div>
+            </div>
+
             <div class="mb-4">
                 <label class="flex items-center">
                     {{ form.include_intro(class="mr-2") }}

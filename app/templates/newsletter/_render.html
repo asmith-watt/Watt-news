@@ -15,6 +15,11 @@
     </div>
     {% endif %}
 
+    {# Top ad (after intro, before articles) #}
+    {% if top_ad_html %}
+    <div style="padding: 16px 0;">{{ top_ad_html|safe }}</div>
+    {% endif %}
+
     {# Articles #}
     {% for item in items %}
     <div style="padding: 20px 0; {% if not loop.last %}border-bottom: 1px solid #e5e7eb;{% endif %}">
@@ -51,6 +56,9 @@
         {% endif %}
         {% endif %}
     </div>
+    {% if mid_ad_html and loop.index == sponsy_mid_position %}
+    <div style="padding: 16px 0;">{{ mid_ad_html|safe }}</div>
+    {% endif %}
     {% endfor %}
 
     {% if not items %}

@@ -310,12 +310,39 @@ def delete(id):
 
 def _render_newsletter_html(newsletter):
     """Render the full newsletter HTML using the _render.html template."""
+    from datetime import date
+    from app.sponsy import fetch_slot_html
+
     template = newsletter.template
+    publication = newsletter.publication
     items = NewsletterItem.query.filter_by(
         newsletter_id=newsletter.id
     ).order_by(NewsletterItem.sort_order).all()
 
+    top_ad_html = None
+    mid_ad_html = None
+
+    if publication.sponsy_api_key and publication.sponsy_publication_id:
+        today = date.today().isoformat()
+        if template.sponsy_top_placement_id:
+            top_ad_html = fetch_slot_html(
+                publication.sponsy_api_key,
+                publication.sponsy_publication_id,
+                template.sponsy_top_placement_id,
+                today,
+            )
+        if template.sponsy_mid_placement_id:
+            mid_ad_html = fetch_slot_html(
+                publication.sponsy_api_key,
+                publication.sponsy_publication_id,
+                template.sponsy_mid_placement_id,
+                today,
+            )
+
     return render_template('newsletter/_render.html',
                            newsletter=newsletter,
                            template=template,
-                           items=items)
+                           items=items,
+                           top_ad_html=top_ad_html,
+                           mid_ad_html=mid_ad_html,
+                           sponsy_mid_position=template.sponsy_mid_position or 3)
