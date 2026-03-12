@@ -25,8 +25,9 @@ def _notify_safe(publication, job_type, stats, errors=None):
 @celery.task(name='app.tasks.trigger_scheduled_content_workflow')
 def trigger_scheduled_content_workflow(publication_id):
     """
-    Trigger the n8n content generation workflow for a publication.
-    Called by the scheduler or manually.
+    Trigger the candidate content generation workflow for a publication.
+    Called by the scheduler. Uses the same n8n candidate workflow as the
+    dashboard "Generate Content from Candidates" button.
     """
     publication = Publication.query.get(publication_id)
     if not publication:
@@ -35,9 +36,9 @@ def trigger_scheduled_content_workflow(publication_id):
     if not publication.is_active:
         return {'error': f'Publication {publication_id} is not active'}
 
-    workflow_url = current_app.config.get('N8N_CONTENT_WORKFLOW_URL')
+    workflow_url = current_app.config.get('N8N_CANDIDATE_CONTENT_WORKFLOW_URL')
     if not workflow_url:
-        return {'error': 'N8N_CONTENT_WORKFLOW_URL not configured'}
+        return {'error': 'N8N_CANDIDATE_CONTENT_WORKFLOW_URL not configured'}
 
     # Create workflow run record (triggered_by_id=None for system-triggered)
     workflow_id = str(uuid.uuid4())
@@ -45,14 +46,13 @@ def trigger_scheduled_content_workflow(publication_id):
         id=workflow_id,
         publication_id=publication.id,
         triggered_by_id=None,  # System-triggered (scheduled)
-        workflow_type='content_generation',
+        workflow_type='candidate_content_generation',
         status='pending'
     )
     db.session.add(workflow_run)
     db.session.commit()
 
     try:
-        # Fire-and-forget request to n8n
         requests.get(
             workflow_url,
             params={
@@ -69,7 +69,7 @@ def trigger_scheduled_content_workflow(publication_id):
             'workflow_id': workflow_id,
             'publication_id': publication_id
         }
-        _notify_safe(publication, 'content_generation', result)
+        _notify_safe(publication, 'candidate_content_generation', result)
         return result
 
     except requests.exceptions.RequestException as e:
@@ -77,7 +77,7 @@ def trigger_scheduled_content_workflow(publication_id):
         workflow_run.message = str(e)
         db.session.commit()
         result = {'error': str(e), 'workflow_id': workflow_id}
-        _notify_safe(publication, 'content_generation', result)
+        _notify_safe(publication, 'candidate_content_generation', result)
         return result
 
 
