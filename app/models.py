@@ -372,6 +372,7 @@ class Newsletter(db.Model):
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
     template_id = db.Column(db.Integer, db.ForeignKey('newsletter_template.id'), nullable=False)
     name = db.Column(db.String(256), nullable=False)
+    issue_date = db.Column(db.Date)
     intro_text = db.Column(db.Text)
     status = db.Column(db.String(32), default='draft')
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))

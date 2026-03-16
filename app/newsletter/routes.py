@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from flask import render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
@@ -64,6 +64,7 @@ def new():
     if request.method == 'POST':
         template_id = request.form.get('template_id', type=int)
         name = request.form.get('name', '').strip()
+        issue_date_str = request.form.get('issue_date', '').strip()
 
         if not template_id or not name:
             flash('Please provide a name and select a template.', 'error')
@@ -78,10 +79,18 @@ def new():
             flash('Invalid template.', 'error')
             return redirect(url_for('newsletter.new', publication_id=current_publication.id))
 
+        issue_date = None
+        if issue_date_str:
+            try:
+                issue_date = date.fromisoformat(issue_date_str)
+            except ValueError:
+                pass
+
         newsletter = Newsletter(
             publication_id=current_publication.id,
             template_id=template_id,
             name=name,
+            issue_date=issue_date,
             created_by_id=current_user.id,
         )
         db.session.add(newsletter)
@@ -310,7 +319,6 @@ def delete(id):
 
 def _render_newsletter_html(newsletter):
     """Render the full newsletter HTML using the _render.html template."""
-    from datetime import date
     from app.sponsy import fetch_slot_html
 
     template = newsletter.template
@@ -323,20 +331,20 @@ def _render_newsletter_html(newsletter):
     mid_ad_html = None
 
     if publication.sponsy_api_key and publication.sponsy_publication_id:
-        today = date.today().isoformat()
+        sponsy_date = (newsletter.issue_date or date.today()).isoformat()
         if template.sponsy_top_placement_id:
             top_ad_html = fetch_slot_html(
                 publication.sponsy_api_key,
                 publication.sponsy_publication_id,
                 template.sponsy_top_placement_id,
-                today,
+                sponsy_date,
             )
         if template.sponsy_mid_placement_id:
             mid_ad_html = fetch_slot_html(
                 publication.sponsy_api_key,
                 publication.sponsy_publication_id,
                 template.sponsy_mid_placement_id,
-                today,
+                sponsy_date,
             )
 
     return render_template('newsletter/_render.html',
