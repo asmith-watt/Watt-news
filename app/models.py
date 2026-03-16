@@ -357,6 +357,8 @@ class NewsletterTemplate(db.Model):
     max_articles = db.Column(db.Integer, default=10)
     sponsy_top_placement_id = db.Column(db.String(128))
     sponsy_mid_placement_id = db.Column(db.String(128))
+    sponsy_top_ad_block_id = db.Column(db.String(128))
+    sponsy_mid_ad_block_id = db.Column(db.String(128))
     sponsy_mid_position = db.Column(db.Integer, default=3)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

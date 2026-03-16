@@ -16,6 +16,51 @@ def fetch_placements(api_key, publication_id):
         return []
 
 
+def fetch_ad_blocks(api_key, publication_id):
+    """Fetch available ad blocks from Sponsy. Returns list of (id, name) tuples."""
+    try:
+        resp = requests.get(
+            'https://api.getsponsy.com/v1/ad-blocks',
+            params={'publicationId': publication_id},
+            headers={'x-api-key': api_key},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        blocks = resp.json().get('data', [])
+        return [(b['id'], b.get('name', b['id'])) for b in blocks]
+    except Exception:
+        return []
+
+
+def fetch_ad_block_html(api_key, ad_block_id, placement_id, date):
+    """Fetch rendered ad HTML from Sponsy for a given ad block and date.
+
+    Uses the POST /ad-blocks/html endpoint.
+    Returns the HTML string or None on any error.
+    """
+    try:
+        body = {
+            'adBlockId': ad_block_id,
+            'date': date,
+        }
+        if placement_id:
+            body['placementId'] = placement_id
+        resp = requests.post(
+            'https://api.getsponsy.com/v1/ad-blocks/html',
+            json=body,
+            headers={'x-api-key': api_key},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get('html') or data.get('data') or None
+        return data or None
+    except Exception:
+        pass
+    return None
+
+
 def fetch_slot_html(api_key, publication_id, placement_id, date):
     """Fetch ad HTML from Sponsy for a given placement and date.
 

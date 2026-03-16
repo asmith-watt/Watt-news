@@ -9,7 +9,7 @@ from app.models import Publication, NewsSource, User, Role, NewsletterTemplate
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
-from app.sponsy import fetch_placements
+from app.sponsy import fetch_placements, fetch_ad_blocks
 
 
 def admin_required(f):
@@ -449,14 +449,19 @@ def new_newsletter_template(pub_id):
     publication = Publication.query.get_or_404(pub_id)
     form = NewsletterTemplateForm()
 
-    # Populate Sponsy placement choices
+    # Populate Sponsy placement and ad block choices
     if publication.sponsy_api_key and publication.sponsy_publication_id:
         placements = fetch_placements(publication.sponsy_api_key, publication.sponsy_publication_id)
-        choices = [('', '-- None --')] + placements
+        placement_choices = [('', '-- None --')] + placements
+        ad_blocks = fetch_ad_blocks(publication.sponsy_api_key, publication.sponsy_publication_id)
+        block_choices = [('', '-- None --')] + ad_blocks
     else:
-        choices = [('', '-- Sponsy not configured --')]
-    form.sponsy_top_placement_id.choices = choices
-    form.sponsy_mid_placement_id.choices = choices
+        placement_choices = [('', '-- Sponsy not configured --')]
+        block_choices = [('', '-- Sponsy not configured --')]
+    form.sponsy_top_placement_id.choices = placement_choices
+    form.sponsy_mid_placement_id.choices = placement_choices
+    form.sponsy_top_ad_block_id.choices = block_choices
+    form.sponsy_mid_ad_block_id.choices = block_choices
 
     if form.validate_on_submit():
         template = NewsletterTemplate(
@@ -470,6 +475,8 @@ def new_newsletter_template(pub_id):
             max_articles=form.max_articles.data,
             sponsy_top_placement_id=form.sponsy_top_placement_id.data or None,
             sponsy_mid_placement_id=form.sponsy_mid_placement_id.data or None,
+            sponsy_top_ad_block_id=form.sponsy_top_ad_block_id.data or None,
+            sponsy_mid_ad_block_id=form.sponsy_mid_ad_block_id.data or None,
             sponsy_mid_position=form.sponsy_mid_position.data or 3,
             is_active=form.is_active.data,
         )
@@ -492,14 +499,19 @@ def edit_newsletter_template(id):
     publication = template.publication
     form = NewsletterTemplateForm(obj=template)
 
-    # Populate Sponsy placement choices
+    # Populate Sponsy placement and ad block choices
     if publication.sponsy_api_key and publication.sponsy_publication_id:
         placements = fetch_placements(publication.sponsy_api_key, publication.sponsy_publication_id)
-        choices = [('', '-- None --')] + placements
+        placement_choices = [('', '-- None --')] + placements
+        ad_blocks = fetch_ad_blocks(publication.sponsy_api_key, publication.sponsy_publication_id)
+        block_choices = [('', '-- None --')] + ad_blocks
     else:
-        choices = [('', '-- Sponsy not configured --')]
-    form.sponsy_top_placement_id.choices = choices
-    form.sponsy_mid_placement_id.choices = choices
+        placement_choices = [('', '-- Sponsy not configured --')]
+        block_choices = [('', '-- Sponsy not configured --')]
+    form.sponsy_top_placement_id.choices = placement_choices
+    form.sponsy_mid_placement_id.choices = placement_choices
+    form.sponsy_top_ad_block_id.choices = block_choices
+    form.sponsy_mid_ad_block_id.choices = block_choices
 
     if form.validate_on_submit():
         template.name = form.name.data
@@ -511,6 +523,8 @@ def edit_newsletter_template(id):
         template.max_articles = form.max_articles.data
         template.sponsy_top_placement_id = form.sponsy_top_placement_id.data or None
         template.sponsy_mid_placement_id = form.sponsy_mid_placement_id.data or None
+        template.sponsy_top_ad_block_id = form.sponsy_top_ad_block_id.data or None
+        template.sponsy_mid_ad_block_id = form.sponsy_mid_ad_block_id.data or None
         template.sponsy_mid_position = form.sponsy_mid_position.data or 3
         template.is_active = form.is_active.data
         db.session.commit()

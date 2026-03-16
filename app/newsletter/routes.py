@@ -319,7 +319,7 @@ def delete(id):
 
 def _render_newsletter_html(newsletter):
     """Render the full newsletter HTML using the _render.html template."""
-    from app.sponsy import fetch_slot_html
+    from app.sponsy import fetch_slot_html, fetch_ad_block_html
 
     template = newsletter.template
     publication = newsletter.publication
@@ -332,14 +332,31 @@ def _render_newsletter_html(newsletter):
 
     if publication.sponsy_api_key and publication.sponsy_publication_id:
         sponsy_date = (newsletter.issue_date or date.today()).isoformat()
-        if template.sponsy_top_placement_id:
+
+        # Prefer ad blocks over placements
+        if template.sponsy_top_ad_block_id:
+            top_ad_html = fetch_ad_block_html(
+                publication.sponsy_api_key,
+                template.sponsy_top_ad_block_id,
+                template.sponsy_top_placement_id,
+                sponsy_date,
+            )
+        elif template.sponsy_top_placement_id:
             top_ad_html = fetch_slot_html(
                 publication.sponsy_api_key,
                 publication.sponsy_publication_id,
                 template.sponsy_top_placement_id,
                 sponsy_date,
             )
-        if template.sponsy_mid_placement_id:
+
+        if template.sponsy_mid_ad_block_id:
+            mid_ad_html = fetch_ad_block_html(
+                publication.sponsy_api_key,
+                template.sponsy_mid_ad_block_id,
+                template.sponsy_mid_placement_id,
+                sponsy_date,
+            )
+        elif template.sponsy_mid_placement_id:
             mid_ad_html = fetch_slot_html(
                 publication.sponsy_api_key,
                 publication.sponsy_publication_id,
