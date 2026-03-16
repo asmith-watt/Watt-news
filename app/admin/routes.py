@@ -9,6 +9,7 @@ from app.models import Publication, NewsSource, User, Role, NewsletterTemplate
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
+from app.sponsy import fetch_placements
 
 
 def admin_required(f):
@@ -448,6 +449,15 @@ def new_newsletter_template(pub_id):
     publication = Publication.query.get_or_404(pub_id)
     form = NewsletterTemplateForm()
 
+    # Populate Sponsy placement choices
+    if publication.sponsy_api_key and publication.sponsy_publication_id:
+        placements = fetch_placements(publication.sponsy_api_key, publication.sponsy_publication_id)
+        choices = [('', '-- None --')] + placements
+    else:
+        choices = [('', '-- Sponsy not configured --')]
+    form.sponsy_top_placement_id.choices = choices
+    form.sponsy_mid_placement_id.choices = choices
+
     if form.validate_on_submit():
         template = NewsletterTemplate(
             publication_id=pub_id,
@@ -481,6 +491,15 @@ def edit_newsletter_template(id):
     template = NewsletterTemplate.query.get_or_404(id)
     publication = template.publication
     form = NewsletterTemplateForm(obj=template)
+
+    # Populate Sponsy placement choices
+    if publication.sponsy_api_key and publication.sponsy_publication_id:
+        placements = fetch_placements(publication.sponsy_api_key, publication.sponsy_publication_id)
+        choices = [('', '-- None --')] + placements
+    else:
+        choices = [('', '-- Sponsy not configured --')]
+    form.sponsy_top_placement_id.choices = choices
+    form.sponsy_mid_placement_id.choices = choices
 
     if form.validate_on_submit():
         template.name = form.name.data
