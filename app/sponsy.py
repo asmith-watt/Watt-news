@@ -32,7 +32,10 @@ def fetch_slot_html(api_key, publication_id, placement_id, date):
         data = resp.json()
         slots = data.get('data', [])
         if slots:
-            return slots[0].get('copy') or None
+            copy = slots[0].get('copy')
+            if isinstance(copy, dict):
+                return copy.get('html') or copy.get('markdown') or None
+            return copy or None
     except Exception:
         pass
     return None
