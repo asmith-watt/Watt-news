@@ -321,7 +321,7 @@ def research_publication_sources(self, publication_id):
     deduplicate, triage via LLM, score, enrich, and store them.
     """
     from app.research.scrapers import get_scraper
-    from app.research.dedup import url_hash, is_duplicate_candidate, is_already_content
+    from app.research.dedup import url_hash, is_duplicate_candidate, is_already_content, sanitize_url
     from app.research.scoring import score_candidate, compute_recency_score
     from app.research.enrichment import enrich_item, _extract_date_from_url
     from app.research.triage import triage_items, TRIAGE_MULTIPLIERS, _SKIP_TRIAGE_SOURCE_TYPES
@@ -395,6 +395,7 @@ def research_publication_sources(self, publication_id):
 
         for item in items:
             try:
+                item.url = sanitize_url(item.url)
                 hash_val = url_hash(item.url)
 
                 # In-memory dedup: skip if another source already found this URL
