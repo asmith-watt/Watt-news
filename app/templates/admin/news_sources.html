@@ -73,6 +73,13 @@
                 <td class="px-4 py-4 text-sm space-x-2">
                     <a href="{{ url_for('admin.edit_news_source', pub_id=publication.id, id=source.id) }}"
                        class="text-blue-600 hover:underline">Edit</a>
+                    {% if stats.get('rejected_count', 0) > 0 %}
+                    <form method="POST" action="{{ url_for('admin.retriage_source', pub_id=publication.id, id=source.id) }}"
+                          class="inline"
+                          onsubmit="return confirm('Re-triage {{ stats.rejected_count }} rejected candidates for {{ source.name }}?');">
+                        <button type="submit" class="text-amber-600 hover:underline">Re-triage</button>
+                    </form>
+                    {% endif %}
                     <form method="POST" action="{{ url_for('admin.delete_news_source', pub_id=publication.id, id=source.id) }}"
                           class="inline"
                           onsubmit="return confirm('Are you sure you want to delete this source?');">

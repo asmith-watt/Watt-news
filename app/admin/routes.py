@@ -220,6 +220,7 @@ def news_sources(pub_id):
             'total_candidates': total,
             'recent_candidates': row.recent_candidates,
             'selected_pct': round(row.selected_count / total * 100) if total else 0,
+            'rejected_count': row.rejected_count,
             'rejected_pct': round(row.rejected_count / total * 100) if total else 0,
             'articles_created': row.articles_created,
             'avg_relevance': round(row.avg_relevance, 1) if row.avg_relevance else None,
@@ -314,6 +315,22 @@ def delete_news_source(pub_id, id):
     db.session.delete(source)
     db.session.commit()
     flash('News source deleted successfully!', 'success')
+    return redirect(url_for('admin.news_sources', pub_id=pub_id))
+
+
+@bp.route('/publications/<int:pub_id>/sources/<int:id>/retriage', methods=['POST'])
+@login_required
+@admin_required
+def retriage_source(pub_id, id):
+    source = NewsSource.query.get_or_404(id)
+    if source.publication_id != pub_id:
+        flash('Invalid source for this publication', 'error')
+        return redirect(url_for('admin.news_sources', pub_id=pub_id))
+
+    from app.tasks import retriage_source_candidates
+    retriage_source_candidates.delay(source.id)
+
+    flash(f'Re-triage triggered for rejected candidates from {source.name}!', 'success')
     return redirect(url_for('admin.news_sources', pub_id=pub_id))
 
 

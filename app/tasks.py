@@ -675,3 +675,123 @@ def research_publication_sources(self, publication_id):
     logger.info(f"Research complete for publication {publication_id}: {stats}")
     _notify_safe(publication, 'research', stats)
     return stats
+
+
+@celery.task(name='app.tasks.retriage_source_candidates')
+def retriage_source_candidates(source_id):
+    """Re-run LLM triage on rejected candidates for a source using current publication settings."""
+    from app.research.scrapers import DiscoveredItem
+    from app.research.triage import triage_items, TRIAGE_MULTIPLIERS
+    from app.research.scoring import score_candidate
+    from app.research.enrichment import enrich_item
+
+    source = NewsSource.query.get(source_id)
+    if not source:
+        logger.error(f"Re-triage: source {source_id} not found")
+        return
+
+    publication = Publication.query.get(source.publication_id)
+    if not publication:
+        logger.error(f"Re-triage: publication for source {source_id} not found")
+        return
+
+    rejected = CandidateArticle.query.filter_by(
+        news_source_id=source_id,
+        status='rejected',
+    ).all()
+
+    if not rejected:
+        logger.info(f"Re-triage: no rejected candidates for source {source_id}")
+        return {'retriage_total': 0, 'promoted': 0, 'still_rejected': 0}
+
+    # Reconstruct DiscoveredItems from rejected candidates
+    items = []
+    source_types = []
+    for candidate in rejected:
+        items.append(DiscoveredItem(
+            url=candidate.url,
+            title=candidate.title,
+            snippet=candidate.snippet,
+            author=candidate.author,
+            published_date=candidate.published_date,
+            metadata=candidate.extra_metadata or {},
+        ))
+        source_types.append(source.source_type or '')
+
+    # Re-triage with current publication settings
+    verdicts = triage_items(
+        items=items,
+        source_types=source_types,
+        industry_description=publication.industry_description or '',
+        reader_personas=publication.reader_personas or '',
+    )
+
+    verdict_map = {v['url']: v for v in verdicts}
+
+    promoted = 0
+    still_rejected = 0
+    enrichment_budget = current_app.config.get('ENRICHMENT_MAX_PER_RUN', 50)
+    enrichment_min_score = current_app.config.get('ENRICHMENT_MIN_SCORE', 25.0)
+    enrichments_used = 0
+
+    for candidate in rejected:
+        verdict_info = verdict_map.get(candidate.url, {})
+        new_verdict = verdict_info.get('verdict', 'not_news')
+        reasoning = verdict_info.get('reasoning', '')
+
+        meta = candidate.extra_metadata or {}
+        meta['retriage_verdict'] = new_verdict
+        meta['retriage_reasoning'] = reasoning
+        meta['retriage_previous_verdict'] = meta.get('triage_verdict', 'not_news')
+
+        if new_verdict in ('relevant_news', 'maybe'):
+            # Re-score the candidate
+            scores = score_candidate(
+                title=candidate.title,
+                snippet=candidate.snippet,
+                published_date=candidate.published_date,
+                source_type=source.source_type or '',
+                industry_description=publication.industry_description or '',
+                source_keywords=source.keywords or '',
+            )
+
+            multiplier = TRIAGE_MULTIPLIERS.get(new_verdict, 1.0)
+            scores['relevance_score'] = round(scores['relevance_score'] * multiplier, 2)
+
+            # Enrich if above threshold and budget allows
+            if scores['relevance_score'] >= enrichment_min_score and enrichments_used < enrichment_budget:
+                try:
+                    item = DiscoveredItem(
+                        url=candidate.url,
+                        title=candidate.title,
+                        snippet=candidate.snippet,
+                        metadata=meta,
+                    )
+                    enriched_meta, is_free = enrich_item(item, source.source_type or '')
+                    meta.update(enriched_meta)
+                    if not is_free:
+                        enrichments_used += 1
+                except Exception as e:
+                    logger.warning(f"Re-triage enrichment failed for {candidate.url}: {e}")
+
+            candidate.status = 'new'
+            candidate.relevance_score = scores['relevance_score']
+            candidate.keyword_score = scores['keyword_score']
+            candidate.recency_score = scores['recency_score']
+            candidate.source_weight = scores['source_weight']
+            meta['triage_verdict'] = new_verdict
+            meta['triage_reasoning'] = reasoning
+            promoted += 1
+        else:
+            still_rejected += 1
+
+        candidate.extra_metadata = meta
+
+    db.session.commit()
+    stats = {
+        'retriage_total': len(rejected),
+        'promoted': promoted,
+        'still_rejected': still_rejected,
+    }
+    logger.info(f"Re-triage complete for source {source_id}: {stats}")
+    return stats
