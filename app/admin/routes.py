@@ -1,11 +1,13 @@
 from flask import render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
+from datetime import datetime, timedelta
 import json
 import secrets
 import requests
+from sqlalchemy import func, case
 from app import db
-from app.models import Publication, NewsSource, User, Role, NewsletterTemplate
+from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
@@ -187,7 +189,44 @@ def generate_publication_access_api_key(id):
 def news_sources(pub_id):
     publication = Publication.query.get_or_404(pub_id)
     sources = NewsSource.query.filter_by(publication_id=pub_id).all()
-    return render_template('admin/news_sources.html', title='News Sources', publication=publication, sources=sources)
+
+    # Source performance stats via grouped conditional aggregation
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    stats_rows = db.session.query(
+        CandidateArticle.news_source_id,
+        func.count(CandidateArticle.id).label('total_candidates'),
+        func.count(case(
+            (CandidateArticle.discovered_at >= thirty_days_ago, CandidateArticle.id)
+        )).label('recent_candidates'),
+        func.count(case(
+            (CandidateArticle.status.in_(['selected', 'processed']), CandidateArticle.id)
+        )).label('selected_count'),
+        func.count(case(
+            (CandidateArticle.status == 'rejected', CandidateArticle.id)
+        )).label('rejected_count'),
+        func.count(case(
+            (CandidateArticle.news_content_id.isnot(None), CandidateArticle.id)
+        )).label('articles_created'),
+        func.avg(CandidateArticle.relevance_score).label('avg_relevance'),
+    ).filter(
+        CandidateArticle.publication_id == pub_id,
+        CandidateArticle.news_source_id.isnot(None)
+    ).group_by(CandidateArticle.news_source_id).all()
+
+    source_stats = {}
+    for row in stats_rows:
+        total = row.total_candidates
+        source_stats[row.news_source_id] = {
+            'total_candidates': total,
+            'recent_candidates': row.recent_candidates,
+            'selected_pct': round(row.selected_count / total * 100) if total else 0,
+            'rejected_pct': round(row.rejected_count / total * 100) if total else 0,
+            'articles_created': row.articles_created,
+            'avg_relevance': round(row.avg_relevance, 1) if row.avg_relevance else None,
+        }
+
+    return render_template('admin/news_sources.html', title='News Sources',
+                           publication=publication, sources=sources, source_stats=source_stats)
 
 
 @bp.route('/publications/<int:pub_id>/sources/new', methods=['GET', 'POST'])

@@ -15,28 +15,62 @@
 
 <div class="bg-white shadow-md rounded-lg overflow-hidden">
     {% if sources %}
+    <div class="overflow-x-auto">
     <table class="min-w-full">
         <thead class="bg-gray-50">
             <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">URL</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">URL</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Candidates discovered in the last 30 days">30d</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Total candidates discovered">Total</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Percentage of candidates selected or processed">Sel %</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Percentage of candidates rejected">Rej %</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Number of articles created from this source">Articles</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase" title="Average relevance score">Avg Rel</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200">
             {% for source in sources %}
+            {% set stats = source_stats.get(source.id, {}) %}
             <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4 font-medium">{{ source.name }}</td>
-                <td class="px-6 py-4 text-gray-500">{{ source.source_type or 'N/A' }}</td>
-                <td class="px-6 py-4 text-sm text-gray-500">{{ source.url[:50] if source.url else 'N/A' }}</td>
-                <td class="px-6 py-4">
+                <td class="px-4 py-4 font-medium">{{ source.name }}</td>
+                <td class="px-4 py-4 text-gray-500">{{ source.source_type or 'N/A' }}</td>
+                <td class="px-4 py-4 text-sm text-gray-500">{{ source.url[:50] if source.url else 'N/A' }}</td>
+                <td class="px-4 py-4">
                     <span class="px-2 py-1 text-xs rounded-full {% if source.is_active %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
                         {% if source.is_active %}Active{% else %}Inactive{% endif %}
                     </span>
                 </td>
-                <td class="px-6 py-4 text-sm space-x-2">
+                <td class="px-3 py-4 text-center text-sm text-gray-600">{{ stats.get('recent_candidates', 0) }}</td>
+                <td class="px-3 py-4 text-center text-sm text-gray-600">{{ stats.get('total_candidates', 0) }}</td>
+                <td class="px-3 py-4 text-center text-sm">
+                    {% if stats.get('total_candidates', 0) > 0 %}
+                        {% set sel = stats.get('selected_pct', 0) %}
+                        <span class="px-2 py-0.5 text-xs rounded-full {% if sel >= 50 %}bg-green-100 text-green-800{% elif sel >= 20 %}bg-yellow-100 text-yellow-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ sel }}%</span>
+                    {% else %}
+                        <span class="text-gray-400">--</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-4 text-center text-sm">
+                    {% if stats.get('total_candidates', 0) > 0 %}
+                        {% set rej = stats.get('rejected_pct', 0) %}
+                        <span class="px-2 py-0.5 text-xs rounded-full {% if rej >= 50 %}bg-red-100 text-red-800{% elif rej >= 30 %}bg-yellow-100 text-yellow-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ rej }}%</span>
+                    {% else %}
+                        <span class="text-gray-400">--</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-4 text-center text-sm text-gray-600">{{ stats.get('articles_created', 0) }}</td>
+                <td class="px-3 py-4 text-center text-sm text-gray-600">
+                    {% if stats.get('avg_relevance') is not none %}
+                        {{ stats.avg_relevance }}
+                    {% else %}
+                        <span class="text-gray-400">--</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-4 text-sm space-x-2">
                     <a href="{{ url_for('admin.edit_news_source', pub_id=publication.id, id=source.id) }}"
                        class="text-blue-600 hover:underline">Edit</a>
                     <form method="POST" action="{{ url_for('admin.delete_news_source', pub_id=publication.id, id=source.id) }}"
@@ -49,6 +83,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <div class="px-6 py-12 text-center text-gray-500">
         No news sources found.
