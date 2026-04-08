@@ -156,6 +156,25 @@ class NewsSource(db.Model):
         return f'<NewsSource {self.name}>'
 
 
+class ResearchLog(db.Model):
+    """Structured error/event log for the research pipeline."""
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    news_source_id = db.Column(db.Integer, db.ForeignKey('news_source.id'), nullable=True, index=True)
+    phase = db.Column(db.String(32), nullable=False, index=True)  # discovery, dedup, triage, scoring, enrichment, save
+    level = db.Column(db.String(16), nullable=False, default='error', index=True)  # error, warning, info
+    message = db.Column(db.Text, nullable=False)
+    url = db.Column(db.String(1024), nullable=True)
+    details = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    publication = db.relationship('Publication', backref='research_logs')
+    news_source = db.relationship('NewsSource', backref='research_logs')
+
+    def __repr__(self):
+        return f'<ResearchLog {self.level} {self.phase}: {self.message[:50]}>'
+
+
 class NewsContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)

@@ -7,7 +7,7 @@ import secrets
 import requests
 from sqlalchemy import func, case
 from app import db
-from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle
+from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle, ResearchLog
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
@@ -332,6 +332,33 @@ def retriage_source(pub_id, id):
 
     flash(f'Re-triage triggered for rejected candidates from {source.name}!', 'success')
     return redirect(url_for('admin.news_sources', pub_id=pub_id))
+
+
+@bp.route('/publications/<int:pub_id>/research-logs')
+@login_required
+@admin_required
+def research_logs(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    page = request.args.get('page', 1, type=int)
+    source_filter = request.args.get('source_id', type=int)
+    level_filter = request.args.get('level')
+    phase_filter = request.args.get('phase')
+
+    query = ResearchLog.query.filter_by(publication_id=pub_id)
+    if source_filter:
+        query = query.filter_by(news_source_id=source_filter)
+    if level_filter:
+        query = query.filter_by(level=level_filter)
+    if phase_filter:
+        query = query.filter_by(phase=phase_filter)
+
+    logs = query.order_by(ResearchLog.created_at.desc()).paginate(page=page, per_page=50, error_out=False)
+    sources = NewsSource.query.filter_by(publication_id=pub_id).order_by(NewsSource.name).all()
+
+    return render_template('admin/research_logs.html', title='Research Logs',
+                           publication=publication, logs=logs, sources=sources,
+                           source_filter=source_filter, level_filter=level_filter,
+                           phase_filter=phase_filter)
 
 
 @bp.route('/users')

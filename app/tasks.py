@@ -8,7 +8,7 @@ from flask import current_app
 
 from app.celery import celery
 from app import db
-from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource
+from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,24 @@ def _notify_safe(publication, job_type, stats, errors=None):
         send_job_notification(publication, job_type, stats, errors)
     except Exception as e:
         logger.error(f'Notification failed for {job_type} on pub {publication.id}: {e}')
+
+
+def _research_log(publication_id, phase, level, message, source_id=None, url=None, details=None):
+    """Write a structured log entry to the research_log table. Never raises."""
+    try:
+        entry = ResearchLog(
+            publication_id=publication_id,
+            news_source_id=source_id,
+            phase=phase,
+            level=level,
+            message=message,
+            url=url,
+            details=details,
+        )
+        db.session.add(entry)
+        db.session.flush()
+    except Exception as e:
+        logger.warning(f"Failed to write research log: {e}")
 
 
 @celery.task(name='app.tasks.trigger_scheduled_content_workflow')
@@ -390,6 +408,9 @@ def research_publication_sources(self, publication_id):
             stats['total_discovered'] += len(items)
         except Exception as e:
             logger.error(f"Scraper error for source {source.name} ({source.id}): {e}")
+            _research_log(publication_id, 'discovery', 'error',
+                          f"Scraper failed: {e}", source_id=source.id,
+                          details={'source_type': source.source_type, 'exception': str(e)})
             stats['errors'] += 1
             continue
 
@@ -438,6 +459,8 @@ def research_publication_sources(self, publication_id):
 
             except Exception as e:
                 logger.error(f"Error deduping item {item.url}: {e}")
+                _research_log(publication_id, 'dedup', 'error',
+                              f"Dedup failed: {e}", source_id=source.id, url=item.url)
                 stats['errors'] += 1
                 continue
 
@@ -540,6 +563,9 @@ def research_publication_sources(self, publication_id):
                 enriched_metadata = enrich_item(item.url, enriched_metadata, source.source_type, source_url=source.url)
                 if enriched_metadata.get('enrichment_failed'):
                     stats['enrichment_failed'] += 1
+                    _research_log(publication_id, 'enrichment', 'warning',
+                                  f"Enrichment failed", source_id=source.id, url=item.url,
+                                  details={'reason': enriched_metadata.get('enrichment_error')})
                 else:
                     stats['enriched'] += 1
                     if is_free_enrichment:
@@ -607,6 +633,9 @@ def research_publication_sources(self, publication_id):
 
         except Exception as e:
             logger.error(f"Error processing item {item.url}: {e}")
+            _research_log(publication_id, 'scoring', 'error',
+                          f"Processing failed: {e}", source_id=source.id, url=item.url,
+                          details={'exception': str(e)})
             stats['errors'] += 1
             continue
 
@@ -620,6 +649,8 @@ def research_publication_sources(self, publication_id):
     except Exception as e:
         db.session.rollback()
         logger.warning(f"Batch commit failed for pub {publication_id}, retrying one-by-one: {e}")
+        _research_log(publication_id, 'save', 'error',
+                      f"Batch commit failed, falling back to one-by-one: {e}")
 
         # Re-save candidates individually, skipping duplicates
         publication = Publication.query.get(publication_id)
@@ -670,10 +701,20 @@ def research_publication_sources(self, publication_id):
         except Exception as e2:
             db.session.rollback()
             logger.error(f"Fallback commit also failed for pub {publication_id}: {e2}")
+            _research_log(publication_id, 'save', 'error',
+                          f"Fallback commit also failed: {e2}")
             raise self.retry(exc=e2)
 
     stats.pop('_free_enrichments', None)
     logger.info(f"Research complete for publication {publication_id}: {stats}")
+    _research_log(publication_id, 'discovery', 'info',
+                  f"Research run complete: {stats['new_candidates']} new, "
+                  f"{stats['errors']} errors, {stats['sources_scanned']} sources scanned",
+                  details=stats)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     _notify_safe(publication, 'research', stats)
     return stats
 
