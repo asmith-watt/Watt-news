@@ -22,18 +22,24 @@
             </div>
             <div class="divide-y divide-gray-100 max-h-[calc(100vh-260px)] overflow-y-auto" id="available-articles">
                 {% for article in available_articles %}
+                {% set dv = article.get_display_version() %}
                 <div class="px-4 py-3 hover:bg-gray-50 article-row {% if article.id in added_ids %}hidden{% endif %}"
                      data-id="{{ article.id }}"
                      data-title="{{ article.title }}"
                      data-teaser="{{ article.teaser or '' }}"
                      data-source="{{ article.source_name or '' }}"
-                     data-url="{{ article.source_url or '' }}">
+                     data-url="{{ article.source_url or '' }}"
+                     data-ghost-url="{{ dv.ghost_post_url or '' }}"
+                     data-version-id="{{ dv.id if dv != article else '' }}">
                     <div class="flex justify-between items-start">
                         <div class="flex-1 min-w-0 mr-2">
                             <p class="text-sm font-medium text-gray-900 truncate">{{ article.title }}</p>
                             <p class="text-xs text-gray-500 mt-0.5">
                                 {{ article.source_name or 'Unknown' }} &middot;
                                 {{ article.created_at.strftime('%b %d') }}
+                                {% if not dv.ghost_post_url %}
+                                <span class="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs" title="Not yet published to Ghost">No Ghost</span>
+                                {% endif %}
                             </p>
                         </div>
                         <button onclick="addArticle({{ article.id }})"
@@ -157,6 +163,17 @@ function addArticle(contentId) {
     const row = document.querySelector(`.article-row[data-id="${contentId}"]`);
     if (!row) return;
 
+    // Check if article has a Ghost URL
+    const ghostUrl = row.dataset.ghostUrl;
+    const versionId = row.dataset.versionId;
+    if (!ghostUrl && versionId) {
+        if (confirm('This article has not been published to Ghost yet. Push to Ghost now?\n\n(Newsletter links will point to Ghost URLs)')) {
+            pushToGhostThenAdd(contentId, versionId);
+            return;
+        }
+        // User chose to add without Ghost — continue normally
+    }
+
     // Hide from available list
     row.classList.add('hidden', 'hidden-added');
 
@@ -200,6 +217,42 @@ function addArticle(contentId) {
 
     document.getElementById('empty-state').classList.add('hidden');
     updateItemCount();
+}
+
+function pushToGhostThenAdd(contentId, versionId) {
+    const row = document.querySelector(`.article-row[data-id="${contentId}"]`);
+    const addBtn = row.querySelector('.add-btn');
+    addBtn.disabled = true;
+    addBtn.textContent = 'Publishing...';
+    addBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    fetch(`/content/${contentId}/version/${versionId}/push-ghost`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Update the data attribute so future checks know it has a Ghost URL
+            row.dataset.ghostUrl = data.ghost_post_url || 'published';
+            // Remove the "No Ghost" badge
+            const badge = row.querySelector('.bg-yellow-100');
+            if (badge) badge.remove();
+            // Now add the article
+            addArticle(contentId);
+        } else {
+            alert('Ghost push failed: ' + (data.error || 'Unknown error'));
+            addBtn.disabled = false;
+            addBtn.textContent = 'Add';
+            addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    })
+    .catch(err => {
+        alert('Ghost push failed: ' + err);
+        addBtn.disabled = false;
+        addBtn.textContent = 'Add';
+        addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
 }
 
 function removeItem(btn) {
