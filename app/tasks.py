@@ -218,7 +218,7 @@ def calculate_next_candidate_run(publication):
 
 @celery.task(name='app.tasks.trigger_scheduled_candidate_content_workflow')
 def trigger_scheduled_candidate_content_workflow(publication_id):
-    """Trigger the n8n candidate content generation workflow for a publication."""
+    """Trigger the candidate research pipeline for a publication on schedule."""
     publication = Publication.query.get(publication_id)
     if not publication:
         return {'error': f'Publication {publication_id} not found'}
@@ -226,48 +226,14 @@ def trigger_scheduled_candidate_content_workflow(publication_id):
     if not publication.is_active:
         return {'error': f'Publication {publication_id} is not active'}
 
-    workflow_url = current_app.config.get('N8N_CANDIDATE_CONTENT_WORKFLOW_URL')
-    if not workflow_url:
-        return {'error': 'N8N_CANDIDATE_CONTENT_WORKFLOW_URL not configured'}
+    has_sources = NewsSource.query.filter_by(
+        publication_id=publication_id, is_active=True
+    ).first() is not None
+    if not has_sources:
+        return {'error': f'Publication {publication_id} has no active sources'}
 
-    workflow_id = str(uuid.uuid4())
-    workflow_run = WorkflowRun(
-        id=workflow_id,
-        publication_id=publication.id,
-        triggered_by_id=None,
-        workflow_type='candidate_content_generation',
-        status='pending'
-    )
-    db.session.add(workflow_run)
-    db.session.commit()
-
-    try:
-        requests.get(
-            workflow_url,
-            params={
-                'publication_id': publication.id,
-                'workflow_id': workflow_id
-            },
-            timeout=5
-        )
-        workflow_run.status = 'running'
-        db.session.commit()
-
-        result = {
-            'success': True,
-            'workflow_id': workflow_id,
-            'publication_id': publication_id
-        }
-        _notify_safe(publication, 'candidate_content_generation', result)
-        return result
-
-    except requests.exceptions.RequestException as e:
-        workflow_run.status = 'failed'
-        workflow_run.message = str(e)
-        db.session.commit()
-        result = {'error': str(e), 'workflow_id': workflow_id}
-        _notify_safe(publication, 'candidate_content_generation', result)
-        return result
+    research_publication_sources.delay(publication_id)
+    return {'success': True, 'publication_id': publication_id}
 
 
 @celery.task(name='app.tasks.check_candidate_content_schedules')

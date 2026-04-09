@@ -342,6 +342,34 @@ def select_version(id, version_id):
     })
 
 
+@bp.route('/content/<int:id>/version/<int:version_id>/edit', methods=['POST'])
+@login_required
+def edit_version(id, version_id):
+    """Update editable fields on a content version."""
+    content = NewsContent.query.get_or_404(id)
+    version = ContentVersion.query.get_or_404(version_id)
+
+    if version.content_id != content.id:
+        return jsonify({'error': 'Version does not belong to this content'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.json or {}
+    editable_fields = ('deck', 'teaser', 'summary', 'content', 'notes')
+    updated = []
+    for field in editable_fields:
+        if field in data:
+            setattr(version, field, data[field])
+            updated.append(field)
+
+    if not updated:
+        return jsonify({'error': 'No editable fields provided'}), 400
+
+    db.session.commit()
+    return jsonify({'success': True, 'updated': updated})
+
+
 @bp.route('/content/<int:id>/status', methods=['POST'])
 @login_required
 def update_status(id):
