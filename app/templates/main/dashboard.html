@@ -56,6 +56,40 @@
     </div>
 </div>
 
+{% if briefing %}
+<div class="mb-6 bg-white shadow-md rounded-lg overflow-hidden">
+    <div class="px-5 py-4">
+        <div class="flex justify-between items-start mb-2">
+            <div>
+                <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
+                <span class="text-xs text-gray-500">{{ briefing.period_start.strftime('%b %d') }} – {{ briefing.period_end.strftime('%b %d, %Y') }}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">Based on {{ briefing.candidate_count }} candidates</span>
+                <button onclick="regenerateBriefing()" id="regen-briefing-btn"
+                        class="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300" title="Regenerate">
+                    Regenerate
+                </button>
+            </div>
+        </div>
+        <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ briefing.summary }}</div>
+    </div>
+</div>
+{% elif current_publication %}
+<div class="mb-6 bg-white shadow-md rounded-lg overflow-hidden">
+    <div class="px-5 py-4 flex justify-between items-center">
+        <div>
+            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
+            <p class="text-xs text-gray-400 mt-1">No briefing generated yet</p>
+        </div>
+        <button onclick="regenerateBriefing()" id="regen-briefing-btn"
+                class="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+            Generate Now
+        </button>
+    </div>
+</div>
+{% endif %}
+
 <div class="mb-6 flex space-x-2">
     <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='all') }}"
        class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
@@ -218,6 +252,38 @@ function pollWorkflowStatus(workflowId, runningMsg) {
         .catch(error => {
             console.error('Error polling workflow status:', error);
         });
+}
+
+// Weekly Briefing
+function regenerateBriefing() {
+    const btn = document.getElementById('regen-briefing-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    fetch('{{ url_for("main.regenerate_briefing") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publication_id: {{ current_publication.id if current_publication else 'null' }} })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.textContent = 'Generating... Reload in a moment';
+            setTimeout(() => location.reload(), 15000);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Regenerate';
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    })
+    .catch(err => {
+        alert('Error: ' + err);
+        btn.disabled = false;
+        btn.textContent = 'Regenerate';
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
 }
 
 // Check for workflow_id in URL on page load

@@ -8,7 +8,7 @@ from flask import current_app
 
 from app.celery import celery
 from app import db
-from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog
+from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing
 
 logger = logging.getLogger(__name__)
 
@@ -803,3 +803,107 @@ def retriage_source_candidates(source_id):
     }
     logger.info(f"Re-triage complete for source {source_id}: {stats}")
     return stats
+
+
+@celery.task(name='app.tasks.generate_weekly_briefings')
+def generate_weekly_briefings(publication_id=None):
+    """Generate weekly briefing summaries from recent candidate articles.
+
+    If publication_id is provided, generates for that publication only.
+    Otherwise generates for all active publications.
+    """
+    import anthropic
+    import json
+
+    api_key = current_app.config.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not configured, skipping weekly briefings")
+        return {'error': 'no API key'}
+
+    model = current_app.config.get('BRIEFING_MODEL', 'claude-haiku-4-5-20251001')
+    min_score = current_app.config.get('BRIEFING_MIN_SCORE', 30.0)
+
+    if publication_id:
+        publications = Publication.query.filter_by(id=publication_id, is_active=True).all()
+    else:
+        publications = Publication.query.filter_by(is_active=True).all()
+
+    period_end = datetime.utcnow().date()
+    period_start = period_end - timedelta(days=7)
+
+    generated = 0
+    for publication in publications:
+        candidates = CandidateArticle.query.filter(
+            CandidateArticle.publication_id == publication.id,
+            CandidateArticle.status != 'rejected',
+            CandidateArticle.relevance_score >= min_score,
+            CandidateArticle.discovered_at >= datetime.combine(period_start, datetime.min.time()),
+        ).order_by(CandidateArticle.relevance_score.desc()).limit(50).all()
+
+        if not candidates:
+            logger.info(f"Weekly briefing: no qualifying candidates for pub {publication.id}")
+            continue
+
+        # Build candidate summary for the prompt
+        candidate_lines = []
+        for c in candidates:
+            meta = c.extra_metadata or {}
+            verdict = meta.get('triage_verdict', 'unknown')
+            line = f"- [{c.relevance_score:.0f}] {c.title or 'Untitled'}"
+            if c.snippet:
+                line += f" — {c.snippet[:200]}"
+            line += f" (triage: {verdict})"
+            candidate_lines.append(line)
+
+        system_prompt = (
+            "You are an industry analyst writing a concise weekly briefing for editors "
+            "of a trade publication. Summarize the key themes, trends, and notable stories "
+            "from the candidate articles below into 1-2 paragraphs. Be specific about what "
+            "happened and why it matters to the readers. Do not list articles individually — "
+            "synthesize them into a narrative.\n\n"
+            f"## Publication Industry\n{publication.industry_description or 'Not specified'}\n\n"
+            f"## Reader Personas\n{publication.reader_personas or 'Not specified'}\n\n"
+            f"## Period\n{period_start.strftime('%B %d')} – {period_end.strftime('%B %d, %Y')}"
+        )
+
+        user_message = (
+            f"Here are {len(candidates)} candidate articles discovered this week, "
+            f"ordered by relevance score (higher = more relevant):\n\n"
+            + "\n".join(candidate_lines)
+        )
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=[{'role': 'user', 'content': user_message}],
+            )
+
+            summary = ''
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    summary += block.text
+
+            if not summary.strip():
+                logger.warning(f"Weekly briefing: empty response for pub {publication.id}")
+                continue
+
+            briefing = WeeklyBriefing(
+                publication_id=publication.id,
+                summary=summary.strip(),
+                period_start=period_start,
+                period_end=period_end,
+                candidate_count=len(candidates),
+            )
+            db.session.add(briefing)
+            db.session.commit()
+            generated += 1
+            logger.info(f"Weekly briefing generated for pub {publication.id}: {len(candidates)} candidates")
+
+        except Exception as e:
+            logger.error(f"Weekly briefing failed for pub {publication.id}: {e}")
+            continue
+
+    return {'generated': generated}

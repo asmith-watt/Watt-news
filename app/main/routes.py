@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing
 from app.main import bp
 import requests
 
@@ -33,6 +33,13 @@ def dashboard():
 
     current_publication = Publication.query.get(publication_id) if publication_id else None
 
+    # Get latest weekly briefing for the current publication
+    briefing = None
+    if publication_id:
+        briefing = WeeklyBriefing.query.filter_by(
+            publication_id=publication_id
+        ).order_by(WeeklyBriefing.created_at.desc()).first()
+
     query = NewsContent.query
 
     # Filter by selected publication
@@ -50,7 +57,23 @@ def dashboard():
     )
 
     return render_template('main/dashboard.html', title='Dashboard', content=content, status=status,
-                           publications=publications, current_publication=current_publication)
+                           publications=publications, current_publication=current_publication,
+                           briefing=briefing)
+
+
+@bp.route('/dashboard/regenerate-briefing', methods=['POST'])
+@login_required
+def regenerate_briefing():
+    publication_id = request.json.get('publication_id')
+    if not publication_id:
+        return jsonify({'error': 'publication_id required'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    from app.tasks import generate_weekly_briefings
+    generate_weekly_briefings.delay(publication_id)
+    return jsonify({'success': True})
 
 
 @bp.route('/content/<int:id>')

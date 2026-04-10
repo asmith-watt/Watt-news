@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 celery = Celery('wattautomation')
 
@@ -30,6 +31,10 @@ def make_celery(app):
         'check-research-schedules': {
             'task': 'app.tasks.check_research_schedules',
             'schedule': 3600.0,  # Every hour
+        },
+        'generate-weekly-briefings': {
+            'task': 'app.tasks.generate_weekly_briefings',
+            'schedule': crontab(day_of_week=0, hour=8, minute=0),  # Mondays 8 AM UTC
         },
     }
 
