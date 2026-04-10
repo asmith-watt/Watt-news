@@ -175,6 +175,22 @@ class ResearchLog(db.Model):
         return f'<ResearchLog {self.level} {self.phase}: {self.message[:50]}>'
 
 
+class WeeklyBriefing(db.Model):
+    """Weekly summary of candidate article activity for a publication."""
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    summary = db.Column(db.Text, nullable=False)
+    period_start = db.Column(db.Date, nullable=False)
+    period_end = db.Column(db.Date, nullable=False)
+    candidate_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    publication = db.relationship('Publication', backref='weekly_briefings')
+
+    def __repr__(self):
+        return f'<WeeklyBriefing {self.publication_id} {self.period_start}–{self.period_end}>'
+
+
 class NewsContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False)
