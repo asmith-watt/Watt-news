@@ -23,9 +23,10 @@
     {# Articles #}
     {% for item in items %}
     <div style="padding: 20px 0; {% if not loop.last %}border-bottom: 1px solid #e5e7eb;{% endif %}">
+        {% set article_url = item.news_content.get_display_version().ghost_post_url if item.news_content.get_display_version().ghost_post_url else item.news_content.source_url %}
         <h2 style="margin: 0 0 8px 0; font-size: 18px; line-height: 1.3;">
-            {% if item.news_content.source_url %}
-            <a href="{{ item.news_content.source_url }}" style="color: {{ template.primary_color }}; text-decoration: none;">
+            {% if article_url %}
+            <a href="{{ article_url }}" style="color: {{ template.primary_color }}; text-decoration: none;">
                 {{ item.news_content.title }}
             </a>
             {% else %}
