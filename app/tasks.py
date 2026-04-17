@@ -868,9 +868,10 @@ def generate_weekly_briefings(publication_id=None):
         system_prompt = (
             "You are an industry analyst writing a concise weekly briefing for editors "
             "of a trade publication. Summarize the key themes, trends, and notable stories "
-            "from the candidate articles below into 1-2 paragraphs. Be specific about what "
-            "happened and why it matters to the readers. Do not list articles individually — "
-            "synthesize them into a narrative.\n\n"
+            "from the candidate articles below as a bulleted list of highlights. Each bullet "
+            "should be 1-2 sentences covering a key development and why it matters. Group "
+            "related items together. Aim for 5-10 bullets. Use plain text bullets (- ), "
+            "not markdown.\n\n"
             f"## Publication Industry\n{publication.industry_description or 'Not specified'}\n\n"
             f"## Reader Personas\n{publication.reader_personas or 'Not specified'}\n\n"
             f"## Period\n{period_start.strftime('%B %d')} – {period_end.strftime('%B %d, %Y')}"
