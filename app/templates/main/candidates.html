@@ -341,17 +341,16 @@ function hideCandidateAuthorModal() {
 function submitCandidateWithAuthor() {
     if (!pendingCandidateId) return;
 
+    const candidateId = pendingCandidateId;
     const selected = document.querySelector('input[name="candidate_modal_author"]:checked');
     const authorId = selected ? parseInt(selected.value) : null;
 
     hideCandidateAuthorModal();
 
-    const btn = document.getElementById(`create-btn-${pendingCandidateId}`);
+    const btn = document.getElementById(`create-btn-${candidateId}`);
     btn.disabled = true;
     btn.textContent = 'Sending...';
     btn.className = 'px-2 py-1 text-xs bg-gray-400 text-white rounded cursor-not-allowed';
-
-    const candidateId = pendingCandidateId;
     const body = authorId ? { author_profile_id: authorId } : {};
 
     fetch(`/candidate/${candidateId}/create-article`, {
