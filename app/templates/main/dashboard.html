@@ -51,24 +51,23 @@
 </div>
 
 {% if briefing %}
-<div class="mb-6 bg-white shadow-md rounded-lg overflow-hidden">
-    <div class="px-5 py-4">
-        <div class="flex justify-between items-start mb-2">
-            <div>
-                <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
-                <span class="text-xs text-gray-500">{{ briefing.period_start.strftime('%b %d') }} – {{ briefing.period_end.strftime('%b %d, %Y') }}</span>
-            </div>
-            <div class="flex items-center space-x-2">
-                <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">Based on {{ briefing.candidate_count }} candidates</span>
-                <button onclick="regenerateBriefing()" id="regen-briefing-btn"
-                        class="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300" title="Regenerate">
-                    Regenerate
-                </button>
-            </div>
+<details class="mb-6 bg-white shadow-md rounded-lg overflow-hidden group">
+    <summary class="px-5 py-4 cursor-pointer flex justify-between items-center hover:bg-gray-50">
+        <div class="flex items-center space-x-3">
+            <svg class="w-4 h-4 text-gray-400 transform transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
+            <span class="text-xs text-gray-500">{{ briefing.period_start.strftime('%b %d') }} – {{ briefing.period_end.strftime('%b %d, %Y') }}</span>
+            <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{{ briefing.candidate_count }} candidates</span>
         </div>
-        <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ briefing.summary }}</div>
-    </div>
-</div>
+        <button onclick="event.preventDefault(); regenerateBriefing()" id="regen-briefing-btn"
+                class="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300" title="Regenerate">
+            Regenerate
+        </button>
+    </summary>
+    <div class="px-5 pb-4 text-sm text-gray-700 leading-relaxed whitespace-pre-line border-t border-gray-100 pt-3">{{ briefing.summary }}</div>
+</details>
 {% elif current_publication %}
 <div class="mb-6 bg-white shadow-md rounded-lg overflow-hidden">
     <div class="px-5 py-4 flex justify-between items-center">
