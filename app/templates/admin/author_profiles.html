@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="{{ url_for('admin.publications') }}" class="text-blue-600 hover:underline">&larr; Back to Publications</a>
+</div>
+
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-gray-800">Author Profiles for {{ publication.name }}</h1>
+    <a href="{{ url_for('admin.new_author_profile', pub_id=publication.id) }}"
+       class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+        New Author
+    </a>
+</div>
+
+<div class="bg-white shadow-md rounded-lg overflow-hidden">
+    {% if profiles %}
+    <div class="divide-y divide-gray-200">
+        {% for profile in profiles %}
+        <div class="px-6 py-4 hover:bg-gray-50">
+            <div class="flex justify-between items-start">
+                <div class="flex-1 min-w-0 mr-4">
+                    <div class="flex items-center space-x-2 mb-1">
+                        <h3 class="text-lg font-medium text-gray-900">{{ profile.name }}</h3>
+                        {% if profile.is_default %}
+                        <span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">Default</span>
+                        {% endif %}
+                        <span class="px-2 py-0.5 text-xs rounded-full {% if profile.is_active %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                            {% if profile.is_active %}Active{% else %}Inactive{% endif %}
+                        </span>
+                    </div>
+                    {% if profile.style_guide %}
+                    <p class="text-sm text-gray-600 mt-1">{{ profile.style_guide[:200] }}{% if profile.style_guide|length > 200 %}...{% endif %}</p>
+                    {% else %}
+                    <p class="text-sm text-gray-400 italic mt-1">Style guide not yet generated</p>
+                    {% endif %}
+                    <p class="text-xs text-gray-400 mt-2">
+                        {{ (profile.sample_articles or [])|length }} sample article(s)
+                        &middot; Created {{ profile.created_at.strftime('%b %d, %Y') }}
+                    </p>
+                </div>
+                <div class="flex items-center space-x-2 flex-shrink-0">
+                    {% if profile.sample_articles %}
+                    <button onclick="regenerateGuide({{ profile.id }})" id="regen-btn-{{ profile.id }}"
+                            class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
+                        {% if profile.style_guide %}Regenerate{% else %}Generate{% endif %} Guide
+                    </button>
+                    {% endif %}
+                    <a href="{{ url_for('admin.edit_author_profile', pub_id=publication.id, id=profile.id) }}"
+                       class="px-3 py-1 text-sm text-blue-600 hover:underline">Edit</a>
+                    <form method="POST" action="{{ url_for('admin.delete_author_profile', pub_id=publication.id, id=profile.id) }}"
+                          class="inline"
+                          onsubmit="return confirm('Are you sure you want to delete this author profile?');">
+                        <button type="submit" class="px-3 py-1 text-sm text-red-600 hover:underline">Delete</button>
+                    </form>
+                </div>
+            </div>
+            {% if profile.style_guide %}
+            <details class="mt-3">
+                <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-600">View full style guide</summary>
+                <div class="mt-2 p-4 bg-gray-50 rounded text-sm text-gray-700 whitespace-pre-line">{{ profile.style_guide }}</div>
+            </details>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-12 text-center text-gray-500">
+        No author profiles found. Create one to start generating content with a consistent voice.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function regenerateGuide(profileId) {
+    const btn = document.getElementById('regen-btn-' + profileId);
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    fetch('{{ url_for("admin.author_profiles", pub_id=publication.id) }}/' + profileId + '/generate-guide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.textContent = 'Generating... Reload shortly';
+            setTimeout(() => location.reload(), 15000);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Regenerate Guide';
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    })
+    .catch(err => {
+        alert('Error: ' + err);
+        btn.disabled = false;
+        btn.textContent = 'Regenerate Guide';
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
+}
+</script>
+{% endblock %}

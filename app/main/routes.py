@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile
 from app.main import bp
 import requests
 
@@ -33,12 +33,16 @@ def dashboard():
 
     current_publication = Publication.query.get(publication_id) if publication_id else None
 
-    # Get latest weekly briefing for the current publication
+    # Get latest weekly briefing and author profiles for the current publication
     briefing = None
+    author_profiles = []
     if publication_id:
         briefing = WeeklyBriefing.query.filter_by(
             publication_id=publication_id
         ).order_by(WeeklyBriefing.created_at.desc()).first()
+        author_profiles = AuthorProfile.query.filter_by(
+            publication_id=publication_id, is_active=True
+        ).order_by(AuthorProfile.is_default.desc(), AuthorProfile.name).all()
 
     query = NewsContent.query
 
@@ -58,7 +62,7 @@ def dashboard():
 
     return render_template('main/dashboard.html', title='Dashboard', content=content, status=status,
                            publications=publications, current_publication=current_publication,
-                           briefing=briefing)
+                           briefing=briefing, author_profiles=author_profiles)
 
 
 @bp.route('/dashboard/regenerate-briefing', methods=['POST'])
@@ -74,6 +78,22 @@ def regenerate_briefing():
     from app.tasks import generate_weekly_briefings
     generate_weekly_briefings.delay(publication_id)
     return jsonify({'success': True})
+
+
+@bp.route('/publication/<int:pub_id>/author-profiles')
+@login_required
+def get_author_profiles(pub_id):
+    """Return active author profiles for a publication (JSON, used by author selection modal)."""
+    profiles = AuthorProfile.query.filter_by(
+        publication_id=pub_id, is_active=True
+    ).order_by(AuthorProfile.is_default.desc(), AuthorProfile.name).all()
+    return jsonify([{
+        'id': p.id,
+        'name': p.name,
+        'is_default': p.is_default,
+        'style_guide_preview': (p.style_guide[:150] + '...') if p.style_guide and len(p.style_guide) > 150 else (p.style_guide or ''),
+        'has_style_guide': bool(p.style_guide),
+    } for p in profiles])
 
 
 @bp.route('/content/<int:id>')
@@ -498,14 +518,24 @@ def trigger_candidate_content_workflow(id):
     db.session.add(workflow_run)
     db.session.commit()
 
+    # Build payload with optional author style guide
+    payload = {
+        'publication_id': publication.id,
+        'workflow_id': workflow_id,
+    }
+    author_profile_id = request.form.get('author_profile_id', type=int)
+    if author_profile_id:
+        author = AuthorProfile.query.get(author_profile_id)
+        if author and author.style_guide:
+            payload['author_name'] = author.name
+            payload['author_style_guide'] = author.style_guide
+
     try:
-        requests.get(
+        requests.post(
             workflow_url,
-            params={
-                'publication_id': publication.id,
-                'workflow_id': workflow_id
-            },
-            timeout=0.5
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=5
         )
     except requests.exceptions.Timeout:
         pass
@@ -554,14 +584,23 @@ def submit_url_workflow(id):
     db.session.add(workflow_run)
     db.session.commit()
 
+    # Build payload with optional author style guide
+    payload = {
+        'publication_id': publication.id,
+        'workflow_id': workflow_id,
+        'source_url': source_url,
+    }
+    author_profile_id = request.form.get('author_profile_id', type=int)
+    if author_profile_id:
+        author = AuthorProfile.query.get(author_profile_id)
+        if author and author.style_guide:
+            payload['author_name'] = author.name
+            payload['author_style_guide'] = author.style_guide
+
     try:
         requests.post(
             workflow_url,
-            json={
-                'publication_id': publication.id,
-                'workflow_id': workflow_id,
-                'source_url': source_url
-            },
+            json=payload,
             headers={'Content-Type': 'application/json'},
             timeout=5
         )
@@ -819,9 +858,16 @@ def candidates():
         page=page, per_page=current_app.config['ITEMS_PER_PAGE'], error_out=False
     )
 
+    author_profiles = []
+    if publication_id:
+        author_profiles = AuthorProfile.query.filter_by(
+            publication_id=publication_id, is_active=True
+        ).order_by(AuthorProfile.is_default.desc(), AuthorProfile.name).all()
+
     return render_template('main/candidates.html', title='Candidate Articles',
                            candidates=candidates_page, status=status, min_score=min_score,
-                           publications=publications, current_publication=current_publication)
+                           publications=publications, current_publication=current_publication,
+                           author_profiles=author_profiles)
 
 
 @bp.route('/publication/<int:id>/trigger-research', methods=['POST'])
@@ -884,14 +930,24 @@ def create_article_from_candidate(id):
     db.session.add(workflow_run)
     db.session.commit()
 
+    # Build payload with optional author style guide
+    payload = {
+        'publication_id': candidate.publication_id,
+        'workflow_id': workflow_id,
+        'source_url': candidate.url,
+    }
+    data = request.get_json(silent=True) or {}
+    author_profile_id = data.get('author_profile_id')
+    if author_profile_id:
+        author = AuthorProfile.query.get(author_profile_id)
+        if author and author.style_guide:
+            payload['author_name'] = author.name
+            payload['author_style_guide'] = author.style_guide
+
     try:
         requests.post(
             workflow_url,
-            json={
-                'publication_id': candidate.publication_id,
-                'workflow_id': workflow_id,
-                'source_url': candidate.url
-            },
+            json=payload,
             headers={'Content-Type': 'application/json'},
             timeout=5
         )

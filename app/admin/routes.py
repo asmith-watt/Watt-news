@@ -7,9 +7,9 @@ import secrets
 import requests
 from sqlalchemy import func, case
 from app import db
-from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle, ResearchLog
+from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle, ResearchLog, AuthorProfile
 from app.admin import bp
-from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm
+from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm, AuthorProfileForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
 from app.sponsy import fetch_placements, fetch_ad_blocks
 
@@ -359,6 +359,146 @@ def research_logs(pub_id):
                            publication=publication, logs=logs, sources=sources,
                            source_filter=source_filter, level_filter=level_filter,
                            phase_filter=phase_filter)
+
+
+# Author Profile CRUD
+
+@bp.route('/publications/<int:pub_id>/authors')
+@login_required
+@admin_required
+def author_profiles(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    profiles = AuthorProfile.query.filter_by(publication_id=pub_id).order_by(AuthorProfile.name).all()
+    return render_template('admin/author_profiles.html', title='Author Profiles',
+                           publication=publication, profiles=profiles)
+
+
+@bp.route('/publications/<int:pub_id>/authors/new', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def new_author_profile(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    form = AuthorProfileForm()
+
+    if form.validate_on_submit():
+        # Build sample_articles list from text and URLs
+        samples = []
+        if form.sample_articles_text.data and form.sample_articles_text.data.strip():
+            for chunk in form.sample_articles_text.data.split('---'):
+                chunk = chunk.strip()
+                if chunk:
+                    samples.append(chunk)
+        if form.sample_article_urls.data and form.sample_article_urls.data.strip():
+            for line in form.sample_article_urls.data.strip().splitlines():
+                url = line.strip()
+                if url:
+                    samples.append(url)
+
+        # If setting as default, clear other defaults
+        if form.is_default.data:
+            AuthorProfile.query.filter_by(publication_id=pub_id, is_default=True).update({'is_default': False})
+
+        profile = AuthorProfile(
+            publication_id=pub_id,
+            name=form.name.data,
+            sample_articles=samples if samples else None,
+            is_default=form.is_default.data,
+            is_active=form.is_active.data,
+        )
+        db.session.add(profile)
+        db.session.commit()
+
+        # Trigger style guide generation if samples were provided
+        if samples:
+            from app.tasks import generate_author_style_guide
+            generate_author_style_guide.delay(profile.id)
+            flash(f'Author profile "{profile.name}" created. Style guide is being generated...', 'success')
+        else:
+            flash(f'Author profile "{profile.name}" created. Add sample articles to generate a style guide.', 'success')
+
+        return redirect(url_for('admin.author_profiles', pub_id=pub_id))
+
+    return render_template('admin/author_profile_form.html', title='New Author Profile',
+                           form=form, publication=publication)
+
+
+@bp.route('/publications/<int:pub_id>/authors/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_author_profile(pub_id, id):
+    publication = Publication.query.get_or_404(pub_id)
+    profile = AuthorProfile.query.get_or_404(id)
+    if profile.publication_id != pub_id:
+        flash('Invalid author for this publication', 'error')
+        return redirect(url_for('admin.author_profiles', pub_id=pub_id))
+
+    form = AuthorProfileForm(obj=profile)
+
+    if request.method == 'GET':
+        # Pre-populate sample fields
+        samples = profile.sample_articles or []
+        urls = [s for s in samples if isinstance(s, str) and s.startswith('http')]
+        texts = [s for s in samples if isinstance(s, str) and not s.startswith('http')]
+        form.sample_article_urls.data = '\n'.join(urls) if urls else ''
+        form.sample_articles_text.data = '\n---\n'.join(texts) if texts else ''
+
+    if form.validate_on_submit():
+        samples = []
+        if form.sample_articles_text.data and form.sample_articles_text.data.strip():
+            for chunk in form.sample_articles_text.data.split('---'):
+                chunk = chunk.strip()
+                if chunk:
+                    samples.append(chunk)
+        if form.sample_article_urls.data and form.sample_article_urls.data.strip():
+            for line in form.sample_article_urls.data.strip().splitlines():
+                url = line.strip()
+                if url:
+                    samples.append(url)
+
+        if form.is_default.data and not profile.is_default:
+            AuthorProfile.query.filter_by(publication_id=pub_id, is_default=True).update({'is_default': False})
+
+        profile.name = form.name.data
+        profile.sample_articles = samples if samples else None
+        profile.is_default = form.is_default.data
+        profile.is_active = form.is_active.data
+        db.session.commit()
+        flash(f'Author profile "{profile.name}" updated.', 'success')
+        return redirect(url_for('admin.author_profiles', pub_id=pub_id))
+
+    return render_template('admin/author_profile_form.html', title='Edit Author Profile',
+                           form=form, publication=publication, profile=profile)
+
+
+@bp.route('/publications/<int:pub_id>/authors/<int:id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_author_profile(pub_id, id):
+    profile = AuthorProfile.query.get_or_404(id)
+    if profile.publication_id != pub_id:
+        flash('Invalid author for this publication', 'error')
+        return redirect(url_for('admin.author_profiles', pub_id=pub_id))
+
+    db.session.delete(profile)
+    db.session.commit()
+    flash(f'Author profile deleted.', 'success')
+    return redirect(url_for('admin.author_profiles', pub_id=pub_id))
+
+
+@bp.route('/publications/<int:pub_id>/authors/<int:id>/generate-guide', methods=['POST'])
+@login_required
+@admin_required
+def generate_author_guide(pub_id, id):
+    profile = AuthorProfile.query.get_or_404(id)
+    if profile.publication_id != pub_id:
+        return jsonify({'error': 'Invalid author for this publication'}), 400
+
+    if not profile.sample_articles:
+        return jsonify({'error': 'No sample articles to analyze'}), 400
+
+    from app.tasks import generate_author_style_guide
+    generate_author_style_guide.delay(profile.id)
+    return jsonify({'success': True})
 
 
 @bp.route('/users')

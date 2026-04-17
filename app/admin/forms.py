@@ -120,6 +120,15 @@ class PublicationForm(FlaskForm):
     submit = SubmitField('Save')
 
 
+class AuthorProfileForm(FlaskForm):
+    name = StringField('Author Name', validators=[DataRequired()])
+    sample_articles_text = TextAreaField('Sample Articles (paste article text, separate with ---)', validators=[Optional()])
+    sample_article_urls = TextAreaField('Sample Article URLs (one per line)', validators=[Optional()])
+    is_default = BooleanField('Default Author')
+    is_active = BooleanField('Active', default=True)
+    submit = SubmitField('Save')
+
+
 class NewsSourceForm(FlaskForm):
     name = StringField('Source Name', validators=[DataRequired()])
     source_type = SelectField('Source Type', choices=SourceType.choices(), validators=[Optional()])

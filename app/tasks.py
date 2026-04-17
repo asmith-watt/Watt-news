@@ -8,7 +8,7 @@ from flask import current_app
 
 from app.celery import celery
 from app import db
-from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing
+from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing, AuthorProfile
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +70,23 @@ def trigger_scheduled_content_workflow(publication_id):
     db.session.add(workflow_run)
     db.session.commit()
 
+    # Include default author style guide if available
+    payload = {
+        'publication_id': publication.id,
+        'workflow_id': workflow_id,
+    }
+    default_author = AuthorProfile.query.filter_by(
+        publication_id=publication.id, is_default=True, is_active=True
+    ).first()
+    if default_author and default_author.style_guide:
+        payload['author_name'] = default_author.name
+        payload['author_style_guide'] = default_author.style_guide
+
     try:
-        requests.get(
+        requests.post(
             workflow_url,
-            params={
-                'publication_id': publication.id,
-                'workflow_id': workflow_id
-            },
+            json=payload,
+            headers={'Content-Type': 'application/json'},
             timeout=5
         )
         workflow_run.status = 'running'
@@ -907,3 +917,91 @@ def generate_weekly_briefings(publication_id=None):
             continue
 
     return {'generated': generated}
+
+
+@celery.task(name='app.tasks.generate_author_style_guide')
+def generate_author_style_guide(author_profile_id):
+    """Analyze sample articles and generate a writing style guide for an author profile."""
+    import anthropic
+
+    profile = AuthorProfile.query.get(author_profile_id)
+    if not profile:
+        return {'error': f'AuthorProfile {author_profile_id} not found'}
+
+    api_key = current_app.config.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not configured, skipping style guide generation")
+        return {'error': 'no API key'}
+
+    samples = profile.sample_articles or []
+    if not samples:
+        return {'error': 'no sample articles provided'}
+
+    # Fetch content for any URLs in the samples
+    article_texts = []
+    for sample in samples:
+        if isinstance(sample, str) and sample.startswith('http'):
+            try:
+                from app.research.enrichment import _firecrawl_scrape
+                firecrawl_key = current_app.config.get('FIRECRAWL_API_KEY')
+                if firecrawl_key:
+                    data = _firecrawl_scrape(sample, firecrawl_key)
+                    if data and data.get('markdown'):
+                        article_texts.append(data['markdown'][:5000])
+                        continue
+            except Exception as e:
+                logger.warning(f"Failed to fetch sample URL {sample}: {e}")
+            article_texts.append(f"[Could not fetch: {sample}]")
+        elif isinstance(sample, str):
+            article_texts.append(sample[:5000])
+
+    if not article_texts:
+        return {'error': 'no usable sample content'}
+
+    system_prompt = (
+        "You are a writing style analyst. Analyze the provided sample articles and produce a "
+        "concise writing style guide that captures this author's voice. The guide will be used "
+        "to instruct an AI to write in this author's style.\n\n"
+        "Cover these aspects:\n"
+        "- **Tone & Voice**: Formal/informal, authoritative/conversational, serious/witty\n"
+        "- **Sentence Structure**: Short/long, simple/complex, varied/consistent\n"
+        "- **Vocabulary**: Technical level, jargon usage, word preferences\n"
+        "- **Opening Style**: How they typically begin articles\n"
+        "- **Paragraph Structure**: Length, transitions, use of subheadings\n"
+        "- **Attribution & Evidence**: How they cite sources, use quotes, reference data\n"
+        "- **Distinctive Patterns**: Rhetorical questions, analogies, humor, direct address\n\n"
+        "Output ONLY the style guide, written as direct instructions (e.g. 'Use short, punchy sentences. "
+        "Open with a concrete example or surprising fact.'). Keep it under 500 words."
+    )
+
+    numbered_samples = []
+    for i, text in enumerate(article_texts, 1):
+        numbered_samples.append(f"--- SAMPLE {i} ---\n{text}")
+    user_message = "\n\n".join(numbered_samples)
+
+    try:
+        model = current_app.config.get('STYLE_GUIDE_MODEL', 'claude-haiku-4-5-20251001')
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{'role': 'user', 'content': user_message}],
+        )
+
+        guide = ''
+        for block in response.content:
+            if hasattr(block, 'text'):
+                guide += block.text
+
+        if guide.strip():
+            profile.style_guide = guide.strip()
+            db.session.commit()
+            logger.info(f"Style guide generated for author profile {author_profile_id}")
+            return {'success': True}
+        else:
+            return {'error': 'empty response from LLM'}
+
+    except Exception as e:
+        logger.error(f"Style guide generation failed for profile {author_profile_id}: {e}")
+        return {'error': str(e)}

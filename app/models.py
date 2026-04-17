@@ -175,6 +175,24 @@ class ResearchLog(db.Model):
         return f'<ResearchLog {self.level} {self.phase}: {self.message[:50]}>'
 
 
+class AuthorProfile(db.Model):
+    """An author writing style/personality for content generation."""
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    style_guide = db.Column(db.Text)
+    sample_articles = db.Column(db.JSON)
+    is_default = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    publication = db.relationship('Publication', backref='author_profiles')
+
+    def __repr__(self):
+        return f'<AuthorProfile {self.name}>'
+
+
 class WeeklyBriefing(db.Model):
     """Weekly summary of candidate article activity for a publication."""
     id = db.Column(db.Integer, primary_key=True)

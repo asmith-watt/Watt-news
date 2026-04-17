@@ -35,6 +35,8 @@
                        class="text-blue-600 hover:underline">Edit</a>
                     <a href="{{ url_for('admin.news_sources', pub_id=pub.id) }}"
                        class="text-blue-600 hover:underline">Sources</a>
+                    <a href="{{ url_for('admin.author_profiles', pub_id=pub.id) }}"
+                       class="text-blue-600 hover:underline">Authors</a>
                     <a href="{{ url_for('admin.newsletter_templates', pub_id=pub.id) }}"
                        class="text-blue-600 hover:underline">Templates</a>
                     <form method="POST" action="{{ url_for('admin.trigger_research', id=pub.id) }}"

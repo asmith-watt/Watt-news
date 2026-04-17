@@ -4,24 +4,18 @@
 <div class="mb-6">
     {% if current_publication %}
     <div class="flex items-center space-x-3">
-        <form method="POST" action="{{ url_for('main.trigger_candidate_content_workflow', id=current_publication.id) }}"
-              class="inline"
-              onsubmit="return confirm('Trigger candidate content generation workflow for {{ current_publication.name }}?');">
-            <button type="submit" class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
-                Generate from Candidates
-            </button>
-        </form>
+        <button onclick="showAuthorModal('candidates')"
+                class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
+            Generate from Candidates
+        </button>
         <div class="bg-white shadow-sm rounded-lg border border-gray-200 px-4 py-3 flex items-center space-x-3">
-            <form method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}"
-                  class="flex items-center space-x-2"
-                  onsubmit="if (!this.source_url.value.trim()) { alert('Please enter a URL.'); return false; } return confirm('Generate an article from this URL for {{ current_publication.name }}?');">
-                <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
-                <input type="url" id="source-url-input" name="source_url" required placeholder="Paste a source article URL..."
-                       class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
-                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
-                    Generate Article
-                </button>
-            </form>
+            <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
+            <input type="url" id="source-url-input" placeholder="Paste a source article URL..."
+                   class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
+            <button onclick="showAuthorModal('url')"
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
+                Generate Article
+            </button>
         </div>
     </div>
     {% endif %}
@@ -178,6 +172,65 @@
     {% endif %}
 </div>
 
+<!-- Hidden forms for workflow submission -->
+{% if current_publication %}
+<form id="candidates-form" method="POST" action="{{ url_for('main.trigger_candidate_content_workflow', id=current_publication.id) }}" class="hidden">
+    <input type="hidden" name="author_profile_id" id="candidates-author-id">
+</form>
+<form id="url-form" method="POST" action="{{ url_for('main.submit_url_workflow', id=current_publication.id) }}" class="hidden">
+    <input type="hidden" name="source_url" id="url-form-source">
+    <input type="hidden" name="author_profile_id" id="url-author-id">
+</form>
+{% endif %}
+
+<!-- Author Selection Modal -->
+<div id="authorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="px-6 py-4 border-b">
+            <h3 class="text-lg font-bold text-gray-800">Select Author Voice</h3>
+        </div>
+        <div class="px-6 py-4">
+            {% if author_profiles %}
+            <div class="space-y-3 max-h-64 overflow-y-auto">
+                {% for profile in author_profiles %}
+                <label class="flex items-start p-3 rounded border cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input type="radio" name="modal_author" value="{{ profile.id }}"
+                           {% if profile.is_default %}checked{% endif %}
+                           class="mt-1 mr-3">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-medium text-gray-900">{{ profile.name }}</span>
+                            {% if profile.is_default %}
+                            <span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Default</span>
+                            {% endif %}
+                            {% if not profile.style_guide %}
+                            <span class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">No guide</span>
+                            {% endif %}
+                        </div>
+                        {% if profile.style_guide %}
+                        <p class="text-xs text-gray-500 mt-1">{{ profile.style_guide[:120] }}...</p>
+                        {% endif %}
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500">No author profiles configured. Content will be generated without a specific voice.</p>
+            {% endif %}
+        </div>
+        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+            <button onclick="hideAuthorModal()"
+                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
+                Cancel
+            </button>
+            <button onclick="submitWithAuthor()" id="author-modal-submit"
+                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Continue
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 let workflowPollInterval = null;
 let currentWorkflowId = null;
@@ -253,6 +306,59 @@ function pollWorkflowStatus(workflowId, runningMsg) {
             console.error('Error polling workflow status:', error);
         });
 }
+
+// Author Selection Modal
+let pendingWorkflowType = null;
+
+function showAuthorModal(workflowType) {
+    // For URL workflow, validate URL first
+    if (workflowType === 'url') {
+        const urlInput = document.getElementById('source-url-input');
+        const url = urlInput.value.trim();
+        if (!url) {
+            alert('Please enter a URL.');
+            return;
+        }
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            alert('Please enter a valid URL starting with http:// or https://');
+            return;
+        }
+    }
+
+    pendingWorkflowType = workflowType;
+    const modal = document.getElementById('authorModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function hideAuthorModal() {
+    const modal = document.getElementById('authorModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    pendingWorkflowType = null;
+}
+
+function submitWithAuthor() {
+    const selected = document.querySelector('input[name="modal_author"]:checked');
+    const authorId = selected ? selected.value : '';
+
+    if (pendingWorkflowType === 'candidates') {
+        document.getElementById('candidates-author-id').value = authorId;
+        document.getElementById('candidates-form').submit();
+    } else if (pendingWorkflowType === 'url') {
+        document.getElementById('url-form-source').value = document.getElementById('source-url-input').value.trim();
+        document.getElementById('url-author-id').value = authorId;
+        document.getElementById('url-form').submit();
+    }
+}
+
+// Close modal on outside click or Escape
+document.getElementById('authorModal').addEventListener('click', function(e) {
+    if (e.target === this) hideAuthorModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && pendingWorkflowType) hideAuthorModal();
+});
 
 // Weekly Briefing
 function regenerateBriefing() {
