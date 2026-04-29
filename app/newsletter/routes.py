@@ -7,6 +7,7 @@ from app.models import (
     Publication, NewsContent, Newsletter, NewsletterTemplate, NewsletterItem
 )
 from app.newsletter import bp
+from app.publication_context import resolve_publication_id
 
 
 def _get_user_publications():
@@ -20,13 +21,8 @@ def _get_user_publications():
 @login_required
 def index():
     publications = _get_user_publications()
-    publication_id = request.args.get('publication_id', type=int)
-
-    current_publication = None
-    if publication_id:
-        current_publication = Publication.query.get(publication_id)
-    elif publications:
-        current_publication = publications[0]
+    publication_id = resolve_publication_id(publications)
+    current_publication = Publication.query.get(publication_id) if publication_id else None
 
     newsletters = []
     if current_publication:
@@ -45,13 +41,8 @@ def index():
 @login_required
 def new():
     publications = _get_user_publications()
-    publication_id = request.args.get('publication_id', type=int)
-
-    current_publication = None
-    if publication_id:
-        current_publication = Publication.query.get(publication_id)
-    elif publications:
-        current_publication = publications[0]
+    publication_id = resolve_publication_id(publications)
+    current_publication = Publication.query.get(publication_id) if publication_id else None
 
     if not current_publication:
         flash('No publication selected.', 'error')

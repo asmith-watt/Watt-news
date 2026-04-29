@@ -5,6 +5,7 @@ import uuid
 from app import db
 from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile
 from app.main import bp
+from app.publication_context import resolve_publication_id
 import requests
 
 
@@ -19,7 +20,6 @@ def index():
 def dashboard():
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'staged')
-    publication_id = request.args.get('publication_id', type=int)
 
     # Get available publications for the user
     if current_user.has_role('admin'):
@@ -27,10 +27,7 @@ def dashboard():
     else:
         publications = [p for p in current_user.publications if p.is_active]
 
-    # Default to first publication if none selected
-    if not publication_id and publications:
-        publication_id = publications[0].id
-
+    publication_id = resolve_publication_id(publications)
     current_publication = Publication.query.get(publication_id) if publication_id else None
 
     # Get latest weekly briefing and author profiles for the current publication
@@ -825,7 +822,6 @@ def candidates():
     """Paginated list of candidate articles with filters."""
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'new')
-    publication_id = request.args.get('publication_id', type=int)
     min_score = request.args.get('min_score', 0, type=float)
 
     # Get available publications for the user
@@ -834,10 +830,7 @@ def candidates():
     else:
         publications = [p for p in current_user.publications if p.is_active]
 
-    # Default to first publication if none selected
-    if not publication_id and publications:
-        publication_id = publications[0].id
-
+    publication_id = resolve_publication_id(publications)
     current_publication = Publication.query.get(publication_id) if publication_id else None
 
     query = CandidateArticle.query
