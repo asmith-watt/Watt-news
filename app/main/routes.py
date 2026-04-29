@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource
 from app.main import bp
 from app.publication_context import resolve_publication_id
 import requests
@@ -15,11 +15,25 @@ def index():
     return redirect(url_for('main.dashboard'))
 
 
+CONTENT_SORT_COLUMNS = {
+    'title': NewsContent.title,
+    'source': NewsContent.source_name,
+    'status': NewsContent.status,
+    'date': NewsContent.created_at,
+}
+
+
 @bp.route('/dashboard')
 @login_required
 def dashboard():
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'staged')
+    sort = request.args.get('sort', 'date')
+    direction = request.args.get('direction', 'desc' if sort == 'date' else 'asc')
+    if sort not in CONTENT_SORT_COLUMNS:
+        sort = 'date'
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
 
     # Get available publications for the user
     if current_user.has_role('admin'):
@@ -53,11 +67,14 @@ def dashboard():
     if status != 'all':
         query = query.filter_by(status=status)
 
-    content = query.order_by(NewsContent.created_at.desc()).paginate(
+    sort_col = CONTENT_SORT_COLUMNS[sort]
+    sort_expr = sort_col.desc() if direction == 'desc' else sort_col.asc()
+    content = query.order_by(sort_expr, NewsContent.id.desc()).paginate(
         page=page, per_page=current_app.config['ITEMS_PER_PAGE'], error_out=False
     )
 
     return render_template('main/dashboard.html', title='Dashboard', content=content, status=status,
+                           sort=sort, direction=direction,
                            publications=publications, current_publication=current_publication,
                            briefing=briefing, author_profiles=author_profiles)
 
@@ -816,6 +833,17 @@ def get_audit_data(id):
     })
 
 
+CANDIDATE_SORT_COLUMNS = {
+    'score': CandidateArticle.relevance_score,
+    'title': CandidateArticle.title,
+    'source': NewsSource.name,
+    'published': CandidateArticle.published_date,
+    'discovered': CandidateArticle.discovered_at,
+    'status': CandidateArticle.status,
+}
+CANDIDATE_SORT_DEFAULTS = {'score': 'desc', 'published': 'desc', 'discovered': 'desc'}
+
+
 @bp.route('/candidates')
 @login_required
 def candidates():
@@ -823,6 +851,12 @@ def candidates():
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'new')
     min_score = request.args.get('min_score', 0, type=float)
+    sort = request.args.get('sort', 'score')
+    direction = request.args.get('direction', 'desc' if sort == 'score' else 'asc')
+    if sort not in CANDIDATE_SORT_COLUMNS:
+        sort = 'score'
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
 
     # Get available publications for the user
     if current_user.has_role('admin'):
@@ -834,6 +868,9 @@ def candidates():
     current_publication = Publication.query.get(publication_id) if publication_id else None
 
     query = CandidateArticle.query
+
+    if sort == 'source':
+        query = query.outerjoin(NewsSource, CandidateArticle.news_source_id == NewsSource.id)
 
     if publication_id:
         query = query.filter_by(publication_id=publication_id)
@@ -847,7 +884,10 @@ def candidates():
     if min_score > 0:
         query = query.filter(CandidateArticle.relevance_score >= min_score)
 
-    candidates_page = query.order_by(CandidateArticle.relevance_score.desc()).paginate(
+    sort_col = CANDIDATE_SORT_COLUMNS[sort]
+    sort_expr = sort_col.desc() if direction == 'desc' else sort_col.asc()
+    # Tiebreak by id for stable pagination across columns with duplicates
+    candidates_page = query.order_by(sort_expr, CandidateArticle.id.desc()).paginate(
         page=page, per_page=current_app.config['ITEMS_PER_PAGE'], error_out=False
     )
 
@@ -859,6 +899,7 @@ def candidates():
 
     return render_template('main/candidates.html', title='Candidate Articles',
                            candidates=candidates_page, status=status, min_score=min_score,
+                           sort=sort, direction=direction,
                            publications=publications, current_publication=current_publication,
                            author_profiles=author_profiles)
 
