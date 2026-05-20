@@ -408,16 +408,17 @@ function submitCandidateWithAuthor() {
     });
 }
 
-document.getElementById('candidateAuthorModal').addEventListener('click', function(e) {
-    if (e.target === this) hideCandidateAuthorModal();
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('candidateAuthorModal').addEventListener('click', function(e) {
+        if (e.target === this) hideCandidateAuthorModal();
+    });
+    document.getElementById('rejectModal').addEventListener('click', function(e) {
+        if (e.target === this) hideRejectModal();
+    });
 });
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && pendingCandidateId) hideCandidateAuthorModal();
     if (e.key === 'Escape' && pendingRejectCandidateId) hideRejectModal();
-});
-
-document.getElementById('rejectModal').addEventListener('click', function(e) {
-    if (e.target === this) hideRejectModal();
 });
 
 let pendingRejectCandidateId = null;
