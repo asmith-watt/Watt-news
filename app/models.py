@@ -379,6 +379,7 @@ class CandidateArticle(db.Model):
     source_weight = db.Column(db.Float, default=0)
 
     status = db.Column(db.String(32), default='new', index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
     extra_metadata = db.Column('metadata', db.JSON, nullable=True)
 
     # Link to generated article

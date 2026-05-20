@@ -148,7 +148,7 @@
                     </button>
                     {% endif %}
                     {% if item.status in ('new', 'selected') %}
-                    <button onclick="updateCandidateStatus({{ item.id }}, 'rejected')"
+                    <button onclick="showRejectModal({{ item.id }})"
                             class="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
                         Reject
                     </button>
@@ -259,6 +259,14 @@ function buildDetailHtml(d) {
     // Title & URL
     html += `<h3 class="font-medium text-gray-900 mb-1">${esc(d.title || 'No title')}</h3>`;
     html += `<a href="${esc(d.url)}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${esc(d.url)}</a>`;
+
+    // Rejection reason
+    if (d.status === 'rejected' && d.rejection_reason) {
+        html += `<div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">`;
+        html += `<div class="text-xs font-medium text-red-700 uppercase mb-1">Rejection Reason</div>`;
+        html += `<p class="text-sm text-red-800 whitespace-pre-wrap">${esc(d.rejection_reason)}</p>`;
+        html += `</div>`;
+    }
 
     // Triage
     if (d.triage_verdict) {
@@ -405,7 +413,53 @@ document.getElementById('candidateAuthorModal').addEventListener('click', functi
 });
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && pendingCandidateId) hideCandidateAuthorModal();
+    if (e.key === 'Escape' && pendingRejectCandidateId) hideRejectModal();
 });
+
+document.getElementById('rejectModal').addEventListener('click', function(e) {
+    if (e.target === this) hideRejectModal();
+});
+
+let pendingRejectCandidateId = null;
+
+function showRejectModal(candidateId) {
+    pendingRejectCandidateId = candidateId;
+    const modal = document.getElementById('rejectModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('rejectionReason').focus();
+}
+
+function hideRejectModal() {
+    const modal = document.getElementById('rejectModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.getElementById('rejectionReason').value = '';
+    pendingRejectCandidateId = null;
+}
+
+function submitRejection() {
+    if (!pendingRejectCandidateId) return;
+    const candidateId = pendingRejectCandidateId;
+    const rejectionReason = document.getElementById('rejectionReason').value;
+
+    fetch(`/candidate/${candidateId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'rejected', rejection_reason: rejectionReason })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating status: ' + error);
+    });
+}
 
 function updateCandidateStatus(candidateId, newStatus) {
     fetch(`/candidate/${candidateId}/status`, {
@@ -436,6 +490,33 @@ function updateCandidateStatus(candidateId, newStatus) {
     });
 }
 </script>
+
+<!-- Rejection Modal -->
+<div id="rejectModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="px-6 py-4 border-b">
+            <h3 class="text-lg font-bold text-gray-800">Reject Candidate</h3>
+        </div>
+        <div class="px-6 py-4">
+            <label for="rejectionReason" class="block text-sm font-medium text-gray-700 mb-2">
+                Rejection Reason (optional)
+            </label>
+            <textarea id="rejectionReason" rows="4"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="Enter the reason for rejection..."></textarea>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+            <button onclick="hideRejectModal()"
+                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
+                Cancel
+            </button>
+            <button onclick="submitRejection()"
+                class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                Reject
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Author Selection Modal for Candidates -->
 <div id="candidateAuthorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">

@@ -935,6 +935,10 @@ def update_candidate_status(id):
         return jsonify({'error': 'Invalid status'}), 400
 
     candidate.status = new_status
+    if new_status == 'rejected':
+        candidate.rejection_reason = (request.json.get('rejection_reason') or '').strip() or None
+    else:
+        candidate.rejection_reason = None
     db.session.commit()
 
     return jsonify({'success': True, 'status': candidate.status})
@@ -1023,6 +1027,7 @@ def candidate_detail(id):
         'recency_score': candidate.recency_score,
         'source_weight': candidate.source_weight,
         'status': candidate.status,
+        'rejection_reason': candidate.rejection_reason,
         'source_name': candidate.news_source.name if candidate.news_source else None,
         'source_type': candidate.news_source.source_type if candidate.news_source else None,
         'discovered_at': candidate.discovered_at.isoformat() if candidate.discovered_at else None,
