@@ -120,6 +120,14 @@
                     {% if item.snippet %}
                     <p class="text-xs text-gray-400 mt-1 truncate max-w-md">{{ item.snippet[:120] }}{% if item.snippet|length > 120 %}...{% endif %}</p>
                     {% endif %}
+                    {% if item.status == 'rejected' %}
+                        {% set reject_reason = item.rejection_reason or (item.extra_metadata.get('triage_reasoning') if item.extra_metadata else None) %}
+                        {% if reject_reason %}
+                        <p class="text-xs text-red-700 mt-1 max-w-md whitespace-pre-wrap">
+                            <span class="font-medium">Rejected{% if not item.rejection_reason %} (auto-triage){% endif %}:</span> {{ reject_reason }}
+                        </p>
+                        {% endif %}
+                    {% endif %}
                 </td>
                 <td class="px-4 py-4 text-sm text-gray-500">
                     {{ item.news_source.name if item.news_source else 'N/A' }}
@@ -260,11 +268,13 @@ function buildDetailHtml(d) {
     html += `<h3 class="font-medium text-gray-900 mb-1">${esc(d.title || 'No title')}</h3>`;
     html += `<a href="${esc(d.url)}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${esc(d.url)}</a>`;
 
-    // Rejection reason
-    if (d.status === 'rejected' && d.rejection_reason) {
+    // Rejection reason (falls back to triage reasoning for auto-rejected candidates)
+    const rejectionText = d.rejection_reason || (d.status === 'rejected' ? d.triage_reasoning : null);
+    if (d.status === 'rejected' && rejectionText) {
+        const label = d.rejection_reason ? 'Rejection Reason' : 'Rejection Reason (Auto-Triage)';
         html += `<div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-red-700 uppercase mb-1">Rejection Reason</div>`;
-        html += `<p class="text-sm text-red-800 whitespace-pre-wrap">${esc(d.rejection_reason)}</p>`;
+        html += `<div class="text-xs font-medium text-red-700 uppercase mb-1">${label}</div>`;
+        html += `<p class="text-sm text-red-800 whitespace-pre-wrap">${esc(rejectionText)}</p>`;
         html += `</div>`;
     }
 
@@ -274,7 +284,7 @@ function buildDetailHtml(d) {
         html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
         html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Triage</div>`;
         html += `<span class="px-2 py-1 text-xs rounded-full ${vc}">${esc(d.triage_verdict)}</span>`;
-        if (d.triage_reasoning) {
+        if (d.triage_reasoning && d.triage_reasoning !== rejectionText) {
             html += `<p class="text-sm text-gray-600 mt-2">${esc(d.triage_reasoning)}</p>`;
         }
         html += `</div>`;
