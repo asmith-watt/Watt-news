@@ -193,6 +193,36 @@ class AuthorProfile(db.Model):
         return f'<AuthorProfile {self.name}>'
 
 
+recipe_candidates = db.Table(
+    'recipe_candidates',
+    db.Column('recipe_id', db.Integer, db.ForeignKey('content_recipe.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('candidate_id', db.Integer, db.ForeignKey('candidate_article.id', ondelete='CASCADE'), primary_key=True),
+)
+
+
+class ContentRecipe(db.Model):
+    """A saved, reusable set of candidate articles + author voice + override
+    instructions that n8n synthesizes into a single article."""
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    name = db.Column(db.String(256), nullable=False)
+    author_profile_id = db.Column(db.Integer, db.ForeignKey('author_profile.id'), nullable=True)
+    override_instructions = db.Column(db.Text, nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    last_run_at = db.Column(db.DateTime, nullable=True)
+    last_workflow_run_id = db.Column(db.String(36), db.ForeignKey('workflow_run.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    publication = db.relationship('Publication', backref='content_recipes')
+    author_profile = db.relationship('AuthorProfile')
+    created_by = db.relationship('User')
+    candidates = db.relationship('CandidateArticle', secondary=recipe_candidates, backref='recipes')
+
+    def __repr__(self):
+        return f'<ContentRecipe {self.name}>'
+
+
 class WeeklyBriefing(db.Model):
     """Weekly summary of candidate article activity for a publication."""
     id = db.Column(db.Integer, primary_key=True)

@@ -26,6 +26,10 @@
                 class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
             Generate from Candidates
         </button>
+        <button onclick="openRecipeModal()"
+                class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 whitespace-nowrap">
+            Create Content Recipe
+        </button>
         <div class="bg-white shadow-sm rounded-lg border border-gray-200 px-4 py-3 flex items-center space-x-3">
             <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
             <input type="url" id="source-url-input" placeholder="Paste a source article URL..."
@@ -99,6 +103,56 @@
         </button>
     </div>
 </div>
+{% endif %}
+
+{% if current_publication %}
+<details class="mb-6 bg-white shadow-md rounded-lg overflow-hidden group">
+    <summary class="px-5 py-4 cursor-pointer flex justify-between items-center hover:bg-gray-50">
+        <div class="flex items-center space-x-3">
+            <svg class="w-4 h-4 text-gray-400 transform transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Content Recipes</h3>
+            <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{{ recipes|length }} saved</span>
+        </div>
+        <button onclick="event.preventDefault(); openRecipeModal()"
+                class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
+            New Recipe
+        </button>
+    </summary>
+    <div class="border-t border-gray-100">
+        {% if recipes %}
+        <table class="min-w-full text-sm">
+            <tbody class="divide-y divide-gray-100">
+                {% for recipe in recipes %}
+                <tr id="recipe-row-{{ recipe.id }}" class="hover:bg-gray-50">
+                    <td class="px-5 py-3">
+                        <div class="font-medium text-gray-900">{{ recipe.name }}</div>
+                        <div class="text-xs text-gray-500">
+                            {{ recipe.candidates|length }} candidate{{ '' if recipe.candidates|length == 1 else 's' }}
+                            {% if recipe.author_profile %} · {{ recipe.author_profile.name }}{% endif %}
+                            {% if recipe.last_run_at %} · last run {{ recipe.last_run_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+                        </div>
+                    </td>
+                    <td class="px-5 py-3 text-right whitespace-nowrap space-x-1">
+                        <button onclick="runRecipe({{ recipe.id }})" id="recipe-run-{{ recipe.id }}"
+                                class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">
+                            Run
+                        </button>
+                        <button onclick="deleteRecipe({{ recipe.id }})"
+                                class="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="px-5 py-4 text-sm text-gray-400">No recipes yet. Click "New Recipe" to combine multiple candidates into one article.</p>
+        {% endif %}
+    </div>
+</details>
 {% endif %}
 
 <div class="mb-6 flex space-x-2">
@@ -247,6 +301,81 @@
         </div>
     </div>
 </div>
+
+<!-- Content Recipe Modal -->
+{% if current_publication %}
+<div id="recipeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+        <div class="px-6 py-4 border-b">
+            <h3 class="text-lg font-bold text-gray-800">Create Content Recipe</h3>
+            <p class="text-sm text-gray-500 mt-1">Combine multiple candidates into a single article.</p>
+        </div>
+        <div class="px-6 py-4 overflow-y-auto space-y-5">
+            <div>
+                <label for="recipe-name" class="block text-sm font-medium text-gray-700 mb-1">Recipe name</label>
+                <input type="text" id="recipe-name" placeholder="e.g. Weekly regulatory roundup"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Candidates <span class="text-gray-400">(select at least one)</span></label>
+                {% if recipe_candidates_list %}
+                <div class="space-y-2 max-h-56 overflow-y-auto border border-gray-200 rounded-md p-2">
+                    {% for c in recipe_candidates_list %}
+                    <label class="flex items-start p-2 rounded cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" name="recipe_candidate" value="{{ c.id }}" class="mt-1 mr-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+                                    {% if c.relevance_score >= 70 %}bg-green-100 text-green-800
+                                    {% elif c.relevance_score >= 40 %}bg-yellow-100 text-yellow-800
+                                    {% else %}bg-red-100 text-red-800{% endif %}">{{ "%.0f"|format(c.relevance_score) }}</span>
+                                <span class="text-sm text-gray-900 truncate">{{ (c.title or c.url)[:90] }}</span>
+                            </div>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500">No candidates available (status new/selected) for this publication.</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Author voice <span class="text-gray-400">(optional)</span></label>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                    <label class="flex items-center p-2 rounded border cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="recipe_author" value="" checked class="mr-3">
+                        <span class="text-sm text-gray-700">No specific voice</span>
+                    </label>
+                    {% for profile in author_profiles %}
+                    <label class="flex items-start p-2 rounded border cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="recipe_author" value="{{ profile.id }}" class="mt-1 mr-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-medium text-gray-900">{{ profile.name }}</span>
+                                {% if profile.is_default %}<span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Default</span>{% endif %}
+                                {% if not profile.style_guide %}<span class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">No guide</span>{% endif %}
+                            </div>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div>
+                <label for="recipe-overrides" class="block text-sm font-medium text-gray-700 mb-1">Style / instruction overrides <span class="text-gray-400">(optional)</span></label>
+                <textarea id="recipe-overrides" rows="3" placeholder="e.g. Lead with the regulatory angle; keep under 600 words."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"></textarea>
+            </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg border-t">
+            <button onclick="closeRecipeModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            <button onclick="submitRecipe()" id="recipe-submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Create &amp; Generate</button>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <script>
 let workflowPollInterval = null;
@@ -409,6 +538,126 @@ function regenerateBriefing() {
     });
 }
 
+// Content Recipes
+const recipeCreateUrl = {% if current_publication %}'{{ url_for("main.create_content_recipe", id=current_publication.id) }}'{% else %}null{% endif %};
+
+function openRecipeModal() {
+    const modal = document.getElementById('recipeModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeRecipeModal() {
+    const modal = document.getElementById('recipeModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function submitRecipe() {
+    const name = document.getElementById('recipe-name').value.trim();
+    const candidateIds = Array.from(document.querySelectorAll('input[name="recipe_candidate"]:checked'))
+        .map(el => parseInt(el.value));
+    const authorEl = document.querySelector('input[name="recipe_author"]:checked');
+    const authorId = authorEl && authorEl.value ? parseInt(authorEl.value) : null;
+    const overrides = document.getElementById('recipe-overrides').value.trim();
+
+    if (!name) { alert('Please enter a recipe name.'); return; }
+    if (candidateIds.length === 0) { alert('Please select at least one candidate.'); return; }
+
+    const btn = document.getElementById('recipe-submit');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    fetch(recipeCreateUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: name,
+            candidate_ids: candidateIds,
+            author_profile_id: authorId,
+            override_instructions: overrides
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            closeRecipeModal();
+            currentWorkflowId = data.workflow_id;
+            const msg = data.message || 'Recipe sent for generation...';
+            showWorkflowStatus('running', msg);
+            if (workflowPollInterval) clearInterval(workflowPollInterval);
+            pollWorkflowStatus(data.workflow_id, msg);
+            workflowPollInterval = setInterval(() => pollWorkflowStatus(data.workflow_id, msg), 3000);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Create & Generate';
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    })
+    .catch(err => {
+        alert('Error: ' + err);
+        btn.disabled = false;
+        btn.textContent = 'Create & Generate';
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
+}
+
+function runRecipe(recipeId) {
+    const btn = document.getElementById('recipe-run-' + recipeId);
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; btn.classList.add('opacity-50'); }
+    fetch('/recipe/' + recipeId + '/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const msg = data.message || 'Recipe sent for generation...';
+            showWorkflowStatus('running', msg);
+            if (workflowPollInterval) clearInterval(workflowPollInterval);
+            pollWorkflowStatus(data.workflow_id, msg);
+            workflowPollInterval = setInterval(() => pollWorkflowStatus(data.workflow_id, msg), 3000);
+            if (btn) { btn.textContent = 'Run'; btn.disabled = false; btn.classList.remove('opacity-50'); }
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            if (btn) { btn.textContent = 'Run'; btn.disabled = false; btn.classList.remove('opacity-50'); }
+        }
+    })
+    .catch(err => {
+        alert('Error: ' + err);
+        if (btn) { btn.textContent = 'Run'; btn.disabled = false; btn.classList.remove('opacity-50'); }
+    });
+}
+
+function deleteRecipe(recipeId) {
+    if (!confirm('Delete this recipe?')) return;
+    fetch('/recipe/' + recipeId + '/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const row = document.getElementById('recipe-row-' + recipeId);
+            if (row) row.remove();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => alert('Error: ' + err));
+}
+
+const recipeModalEl = document.getElementById('recipeModal');
+if (recipeModalEl) {
+    recipeModalEl.addEventListener('click', function(e) {
+        if (e.target === this) closeRecipeModal();
+    });
+}
+
 // Check for workflow_id in URL on page load
 document.addEventListener('DOMContentLoaded', function() {
     const workflowId = getUrlParam('workflow_id');
@@ -418,6 +667,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let runningMsg = 'Content generation workflow is running...';
         if (workflowType === 'submit_url') runningMsg = 'Article-from-URL workflow is running...';
         else if (workflowType === 'candidate_content_generation') runningMsg = 'Candidate content generation workflow is running...';
+        else if (workflowType === 'content_recipe') runningMsg = 'Content recipe workflow is running...';
         showWorkflowStatus('running', runningMsg);
         // Poll every 3 seconds
         pollWorkflowStatus(workflowId, runningMsg);

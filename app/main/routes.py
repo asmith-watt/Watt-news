@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource, ContentRecipe
 from app.main import bp
 from app.publication_context import resolve_publication_id
 import requests
@@ -47,6 +47,8 @@ def dashboard():
     # Get latest weekly briefing and author profiles for the current publication
     briefing = None
     author_profiles = []
+    recipe_candidates_list = []
+    recipes = []
     if publication_id:
         briefing = WeeklyBriefing.query.filter_by(
             publication_id=publication_id
@@ -54,6 +56,14 @@ def dashboard():
         author_profiles = AuthorProfile.query.filter_by(
             publication_id=publication_id, is_active=True
         ).order_by(AuthorProfile.is_default.desc(), AuthorProfile.name).all()
+        # Candidates available to combine into a recipe, and saved recipes
+        recipe_candidates_list = CandidateArticle.query.filter(
+            CandidateArticle.publication_id == publication_id,
+            CandidateArticle.status.in_(('new', 'selected'))
+        ).order_by(CandidateArticle.relevance_score.desc()).all()
+        recipes = ContentRecipe.query.filter_by(
+            publication_id=publication_id
+        ).order_by(ContentRecipe.created_at.desc()).all()
 
     query = NewsContent.query
 
@@ -76,7 +86,8 @@ def dashboard():
     return render_template('main/dashboard.html', title='Dashboard', content=content, status=status,
                            sort=sort, direction=direction,
                            publications=publications, current_publication=current_publication,
-                           briefing=briefing, author_profiles=author_profiles)
+                           briefing=briefing, author_profiles=author_profiles,
+                           recipe_candidates_list=recipe_candidates_list, recipes=recipes)
 
 
 @bp.route('/dashboard/regenerate-briefing', methods=['POST'])
@@ -232,12 +243,18 @@ def push_version_to_cms(id, version_id):
         return jsonify({'error': 'CMS configuration not set for this publication'}), 400
 
     try:
+        import markdown as md
+
+        # Convert Markdown body to HTML so basic formatting (subheads, bold,
+        # italic, paragraphs/line breaks) is preserved in the CMS.
+        body_html = md.markdown(version.content, extensions=['nl2br', 'fenced_code', 'tables'])
+
         # Build props with available fields from version
         # CMS API props: title, type, body, deck, excerpt, byline, creditOrSource, notes, slug
         props = {
             'title': content.title,
             'type': 'NEWS',
-            'body': version.content
+            'body': body_html
         }
 
         # Add optional fields from version if they exist
@@ -564,6 +581,168 @@ def trigger_candidate_content_workflow(id):
     db.session.commit()
 
     return redirect(url_for('main.dashboard', publication_id=id, workflow_id=workflow_id, workflow_type='candidate_content_generation'))
+
+
+def _trigger_recipe_workflow(recipe):
+    """Create a WorkflowRun and fire the recipe workflow at n8n.
+
+    Returns the WorkflowRun. Raises ValueError if the workflow URL is not
+    configured. Network failures mark the run failed and re-raise.
+    """
+    workflow_url = current_app.config.get('N8N_RECIPE_WORKFLOW_URL')
+    if not workflow_url:
+        raise ValueError('Recipe workflow URL is not configured. Set N8N_RECIPE_WORKFLOW_URL environment variable.')
+
+    workflow_id = str(uuid.uuid4())
+    workflow_run = WorkflowRun(
+        id=workflow_id,
+        publication_id=recipe.publication_id,
+        triggered_by_id=current_user.id,
+        workflow_type='content_recipe',
+        status='pending'
+    )
+    db.session.add(workflow_run)
+    db.session.commit()
+
+    payload = {
+        'publication_id': recipe.publication_id,
+        'workflow_id': workflow_id,
+        'recipe_id': recipe.id,
+        'recipe_name': recipe.name,
+        'candidates': [
+            {'id': c.id, 'url': c.url, 'title': c.title}
+            for c in recipe.candidates
+        ],
+    }
+    if recipe.author_profile and recipe.author_profile.style_guide:
+        payload['author_name'] = recipe.author_profile.name
+        payload['author_style_guide'] = recipe.author_profile.style_guide
+    if recipe.override_instructions:
+        payload['override_instructions'] = recipe.override_instructions
+
+    try:
+        requests.post(
+            workflow_url,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=5
+        )
+    except requests.exceptions.Timeout:
+        # Fire-and-forget: n8n received it, the response just didn't return in time
+        pass
+    except requests.exceptions.RequestException as e:
+        workflow_run.status = 'failed'
+        workflow_run.message = str(e)
+        recipe.last_run_at = datetime.utcnow()
+        recipe.last_workflow_run_id = workflow_id
+        db.session.commit()
+        raise
+
+    workflow_run.status = 'running'
+    recipe.last_run_at = datetime.utcnow()
+    recipe.last_workflow_run_id = workflow_id
+    db.session.commit()
+    return workflow_run
+
+
+@bp.route('/publication/<int:id>/recipes', methods=['POST'])
+@login_required
+def create_content_recipe(id):
+    """Create a Content Recipe from selected candidates and fire the workflow."""
+    publication = Publication.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    candidate_ids = data.get('candidate_ids') or []
+    author_profile_id = data.get('author_profile_id')
+    override_instructions = (data.get('override_instructions') or '').strip() or None
+
+    if not name:
+        return jsonify({'error': 'Recipe name is required'}), 400
+    if not candidate_ids:
+        return jsonify({'error': 'Select at least one candidate'}), 400
+
+    # Only accept candidates belonging to this publication
+    candidates = CandidateArticle.query.filter(
+        CandidateArticle.id.in_(candidate_ids),
+        CandidateArticle.publication_id == publication.id
+    ).all()
+    if not candidates:
+        return jsonify({'error': 'No valid candidates found for this publication'}), 400
+
+    author = None
+    if author_profile_id:
+        author = AuthorProfile.query.filter_by(
+            id=author_profile_id, publication_id=publication.id
+        ).first()
+
+    recipe = ContentRecipe(
+        publication_id=publication.id,
+        name=name,
+        author_profile_id=author.id if author else None,
+        override_instructions=override_instructions,
+        created_by_id=current_user.id,
+    )
+    recipe.candidates = candidates
+    db.session.add(recipe)
+    db.session.commit()
+
+    try:
+        run = _trigger_recipe_workflow(recipe)
+    except ValueError as e:
+        return jsonify({'error': str(e), 'recipe_id': recipe.id}), 400
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Failed to trigger workflow: {str(e)}', 'recipe_id': recipe.id}), 500
+
+    return jsonify({
+        'success': True,
+        'recipe_id': recipe.id,
+        'workflow_id': run.id,
+        'message': f'Recipe "{recipe.name}" created and sent for generation',
+    })
+
+
+@bp.route('/recipe/<int:recipe_id>/run', methods=['POST'])
+@login_required
+def run_content_recipe(recipe_id):
+    """Re-run a saved Content Recipe."""
+    recipe = ContentRecipe.query.get_or_404(recipe_id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(recipe.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    if not recipe.candidates:
+        return jsonify({'error': 'This recipe has no candidates'}), 400
+
+    try:
+        run = _trigger_recipe_workflow(recipe)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Failed to trigger workflow: {str(e)}'}), 500
+
+    return jsonify({
+        'success': True,
+        'workflow_id': run.id,
+        'message': f'Recipe "{recipe.name}" sent for generation',
+    })
+
+
+@bp.route('/recipe/<int:recipe_id>/delete', methods=['POST'])
+@login_required
+def delete_content_recipe(recipe_id):
+    """Delete a saved Content Recipe."""
+    recipe = ContentRecipe.query.get_or_404(recipe_id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(recipe.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    db.session.delete(recipe)
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @bp.route('/publication/<int:id>/submit-url-workflow', methods=['POST'])
