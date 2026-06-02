@@ -56,10 +56,12 @@ def dashboard():
         author_profiles = AuthorProfile.query.filter_by(
             publication_id=publication_id, is_active=True
         ).order_by(AuthorProfile.is_default.desc(), AuthorProfile.name).all()
-        # Candidates available to combine into a recipe, and saved recipes
+        # Candidates available to combine into a recipe, and saved recipes.
+        # Include 'processed' so already-used candidates can be reused; only
+        # 'rejected' candidates are hidden.
         recipe_candidates_list = CandidateArticle.query.filter(
             CandidateArticle.publication_id == publication_id,
-            CandidateArticle.status.in_(('new', 'selected'))
+            CandidateArticle.status != 'rejected'
         ).order_by(CandidateArticle.relevance_score.desc()).all()
         recipes = ContentRecipe.query.filter_by(
             publication_id=publication_id
