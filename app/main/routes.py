@@ -619,8 +619,7 @@ def _trigger_recipe_workflow(recipe):
         'candidates': [
             {'id': c.id, 'url': c.url, 'title': c.title}
             for c in recipe.candidates
-        ],
-        'static_sources': [
+        ] + [
             {
                 'id': s.id,
                 'title': s.name,
