@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from enum import Enum
 from flask_login import UserMixin
@@ -200,6 +201,33 @@ recipe_candidates = db.Table(
 )
 
 
+recipe_static_sources = db.Table(
+    'recipe_static_sources',
+    db.Column('recipe_id', db.Integer, db.ForeignKey('content_recipe.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('static_source_id', db.Integer, db.ForeignKey('static_source.id', ondelete='CASCADE'), primary_key=True),
+)
+
+
+class StaticSource(db.Model):
+    """Reusable pasted source material (e.g. an interview transcript) exposed at
+    a public token URL so n8n can fetch/scrape it like any other source."""
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    name = db.Column(db.String(256), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    token = db.Column(db.String(48), nullable=False, unique=True, index=True,
+                      default=lambda: secrets.token_urlsafe(24))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    publication = db.relationship('Publication', backref='static_sources')
+    created_by = db.relationship('User')
+
+    def __repr__(self):
+        return f'<StaticSource {self.name}>'
+
+
 class ContentRecipe(db.Model):
     """A saved, reusable set of candidate articles + author voice + override
     instructions that n8n synthesizes into a single article."""
@@ -218,6 +246,7 @@ class ContentRecipe(db.Model):
     author_profile = db.relationship('AuthorProfile')
     created_by = db.relationship('User')
     candidates = db.relationship('CandidateArticle', secondary=recipe_candidates, backref='recipes')
+    static_sources = db.relationship('StaticSource', secondary=recipe_static_sources, backref='recipes')
 
     def __repr__(self):
         return f'<ContentRecipe {self.name}>'

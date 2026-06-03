@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource, ContentRecipe
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource, ContentRecipe, StaticSource
 from app.main import bp
 from app.publication_context import resolve_publication_id
 import requests
@@ -49,6 +49,7 @@ def dashboard():
     author_profiles = []
     recipe_candidates_list = []
     recipes = []
+    static_sources = []
     if publication_id:
         briefing = WeeklyBriefing.query.filter_by(
             publication_id=publication_id
@@ -66,6 +67,9 @@ def dashboard():
         recipes = ContentRecipe.query.filter_by(
             publication_id=publication_id
         ).order_by(ContentRecipe.created_at.desc()).all()
+        static_sources = StaticSource.query.filter_by(
+            publication_id=publication_id
+        ).order_by(StaticSource.created_at.desc()).all()
 
     query = NewsContent.query
 
@@ -89,7 +93,8 @@ def dashboard():
                            sort=sort, direction=direction,
                            publications=publications, current_publication=current_publication,
                            briefing=briefing, author_profiles=author_profiles,
-                           recipe_candidates_list=recipe_candidates_list, recipes=recipes)
+                           recipe_candidates_list=recipe_candidates_list, recipes=recipes,
+                           static_sources=static_sources)
 
 
 @bp.route('/dashboard/regenerate-briefing', methods=['POST'])
@@ -615,6 +620,14 @@ def _trigger_recipe_workflow(recipe):
             {'id': c.id, 'url': c.url, 'title': c.title}
             for c in recipe.candidates
         ],
+        'static_sources': [
+            {
+                'id': s.id,
+                'title': s.name,
+                'url': url_for('main.serve_static_source', token=s.token, _external=True),
+            }
+            for s in recipe.static_sources
+        ],
     }
     if recipe.author_profile and recipe.author_profile.style_guide:
         payload['author_name'] = recipe.author_profile.name
@@ -659,21 +672,27 @@ def create_content_recipe(id):
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
     candidate_ids = data.get('candidate_ids') or []
+    static_source_ids = data.get('static_source_ids') or []
     author_profile_id = data.get('author_profile_id')
     override_instructions = (data.get('override_instructions') or '').strip() or None
 
     if not name:
         return jsonify({'error': 'Recipe name is required'}), 400
-    if not candidate_ids:
-        return jsonify({'error': 'Select at least one candidate'}), 400
+    if not candidate_ids and not static_source_ids:
+        return jsonify({'error': 'Select at least one candidate or static source'}), 400
 
-    # Only accept candidates belonging to this publication
+    # Only accept candidates / static sources belonging to this publication
     candidates = CandidateArticle.query.filter(
         CandidateArticle.id.in_(candidate_ids),
         CandidateArticle.publication_id == publication.id
-    ).all()
-    if not candidates:
-        return jsonify({'error': 'No valid candidates found for this publication'}), 400
+    ).all() if candidate_ids else []
+    sources = StaticSource.query.filter(
+        StaticSource.id.in_(static_source_ids),
+        StaticSource.publication_id == publication.id
+    ).all() if static_source_ids else []
+
+    if not candidates and not sources:
+        return jsonify({'error': 'No valid candidates or static sources found for this publication'}), 400
 
     author = None
     if author_profile_id:
@@ -689,6 +708,7 @@ def create_content_recipe(id):
         created_by_id=current_user.id,
     )
     recipe.candidates = candidates
+    recipe.static_sources = sources
     db.session.add(recipe)
     db.session.commit()
 
@@ -716,8 +736,8 @@ def run_content_recipe(recipe_id):
     if not current_user.has_role('admin') and not current_user.has_publication_access(recipe.publication_id):
         return jsonify({'error': 'Access denied'}), 403
 
-    if not recipe.candidates:
-        return jsonify({'error': 'This recipe has no candidates'}), 400
+    if not recipe.candidates and not recipe.static_sources:
+        return jsonify({'error': 'This recipe has no sources'}), 400
 
     try:
         run = _trigger_recipe_workflow(recipe)
@@ -743,6 +763,69 @@ def delete_content_recipe(recipe_id):
         return jsonify({'error': 'Access denied'}), 403
 
     db.session.delete(recipe)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@bp.route('/source/<token>')
+def serve_static_source(token):
+    """Public, unauthenticated HTML view of a static source so n8n (or its
+    scraper, e.g. Firecrawl) can fetch it like any other source URL.
+
+    No login/API key: the unguessable token is the access control.
+    """
+    import markdown as md
+
+    source = StaticSource.query.filter_by(token=token).first_or_404()
+    body_html = md.markdown(source.content or '', extensions=['nl2br', 'fenced_code', 'tables'])
+    return render_template('main/static_source.html', source=source, body_html=body_html)
+
+
+@bp.route('/publication/<int:id>/static-sources', methods=['POST'])
+@login_required
+def create_static_source(id):
+    """Create a reusable static source for a publication."""
+    publication = Publication.query.get_or_404(id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    content = (data.get('content') or '').strip()
+
+    if not name:
+        return jsonify({'error': 'Name is required'}), 400
+    if not content:
+        return jsonify({'error': 'Content is required'}), 400
+
+    source = StaticSource(
+        publication_id=publication.id,
+        name=name,
+        content=content,
+        created_by_id=current_user.id,
+    )
+    db.session.add(source)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'id': source.id,
+        'name': source.name,
+        'url': url_for('main.serve_static_source', token=source.token, _external=True),
+    })
+
+
+@bp.route('/static-source/<int:source_id>/delete', methods=['POST'])
+@login_required
+def delete_static_source(source_id):
+    """Delete a static source."""
+    source = StaticSource.query.get_or_404(source_id)
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(source.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    db.session.delete(source)
     db.session.commit()
     return jsonify({'success': True})
 
