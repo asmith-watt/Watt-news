@@ -28,10 +28,11 @@ def make_celery(app):
             'task': 'app.tasks.check_candidate_content_schedules',
             'schedule': 60.0,  # Every 60 seconds
         },
-        'check-research-schedules': {
-            'task': 'app.tasks.check_research_schedules',
-            'schedule': 3600.0,  # Every hour
-        },
+        # NOTE: There is intentionally no automatic baseline research scan.
+        # Research / candidate discovery runs ONLY when a publication has the
+        # explicit "Research / Candidate Discovery" schedule enabled (handled by
+        # check_candidate_content_schedules), or when triggered manually via the
+        # "Run Research" button.
         'generate-weekly-briefings': {
             'task': 'app.tasks.generate_weekly_briefings',
             'schedule': crontab(day_of_week=0, hour=8, minute=0),  # Mondays 8 AM UTC
