@@ -27,7 +27,7 @@ class PublicationForm(FlaskForm):
     # Research fields
     require_candidate_review = BooleanField('Require Candidate Review')
 
-    # Scheduling fields
+    # Content generation scheduling fields (selected candidates -> drafted articles)
     schedule_enabled = BooleanField('Enable Scheduled Content Generation')
     schedule_frequency = SelectField('Frequency', choices=[
         ('', '-- Select --'),
@@ -72,8 +72,8 @@ class PublicationForm(FlaskForm):
         ('6', 'Sunday'),
     ], validators=[Optional()])
 
-    # Candidate content generation scheduling fields
-    candidate_schedule_enabled = BooleanField('Enable Scheduled Candidate Content Generation')
+    # Research / candidate discovery scheduling fields (scrape sources -> new candidates)
+    candidate_schedule_enabled = BooleanField('Enable Scheduled Research / Candidate Discovery')
     candidate_schedule_frequency = SelectField('Frequency', choices=[
         ('', '-- Select --'),
         ('daily', 'Daily'),

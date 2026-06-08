@@ -230,7 +230,8 @@
                         {{ form.schedule_enabled(class="mr-2", id="schedule_enabled") }}
                         <span class="text-gray-700 font-bold">{{ form.schedule_enabled.label.text }}</span>
                     </label>
-                    <p class="text-gray-500 text-sm mt-1">Automatically trigger content generation on a schedule</p>
+                     <p class="text-gray-500 text-sm mt-1">On this schedule, run the content generation workflow that turns <strong>already-selected candidate articles into drafted articles</strong>. (This does not discover new candidates &mdash; use the Research / Candidate Discovery schedule below for that.)</p>
+                    <p class="text-amber-700 text-sm mt-2 p-2 bg-amber-50 border border-amber-200 rounded">&#9888; <strong>Use with caution.</strong> When enabled, articles are generated automatically without manual review. Make sure your candidate selection and review process is trustworthy before turning this on, as it consumes LLM credits and can publish drafts on its own cadence.</p>
                 </div>
 
                 <div id="schedule_options" class="{% if not form.schedule_enabled.data %}hidden{% endif %} space-y-4 mt-4 pl-4 border-l-2 border-blue-300">
@@ -265,16 +266,16 @@
                 </div>
             </div>
 
-            <!-- Candidate Content Generation Schedule -->
+            <!-- Research / Candidate Discovery Schedule -->
             <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Candidate Content Generation Schedule</h3>
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Research / Candidate Discovery Schedule</h3>
 
                 <div class="mb-4">
                     <label class="flex items-center">
                         {{ form.candidate_schedule_enabled(class="mr-2", id="candidate_schedule_enabled") }}
                         <span class="text-gray-700 font-bold">{{ form.candidate_schedule_enabled.label.text }}</span>
                     </label>
-                    <p class="text-gray-500 text-sm mt-1">Automatically trigger content generation from candidates on a schedule</p>
+                    <p class="text-gray-500 text-sm mt-1">On this schedule, run the <strong>research pipeline</strong> that scrapes this publication's news sources to <strong>discover new candidate articles</strong>. If this is left unchecked, no automatic discovery happens &mdash; you must run research manually with the <strong>Run Research</strong> button.</p>
                 </div>
 
                 <div id="candidate_schedule_options" class="{% if not form.candidate_schedule_enabled.data %}hidden{% endif %} space-y-4 mt-4 pl-4 border-l-2 border-purple-300">

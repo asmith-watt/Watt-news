@@ -113,6 +113,10 @@ def trigger_scheduled_content_workflow(publication_id):
 def check_publication_schedules():
     """
     Check if any publications are due for scheduled content generation.
+e
+    This generates drafted articles from ALREADY-SELECTED candidates (via the
+    n8n candidate content workflow). It does not discover new candidates --
+    that is handled by ``check_candidate_content_schedules``.
     Runs every minute via Celery Beat.
     """
     now = datetime.utcnow()
@@ -248,7 +252,13 @@ def trigger_scheduled_candidate_content_workflow(publication_id):
 
 @celery.task(name='app.tasks.check_candidate_content_schedules')
 def check_candidate_content_schedules():
-    """Check if any publications are due for scheduled candidate content generation."""
+    """Check if any publications are due for scheduled research / candidate discovery.
+
+    Despite the legacy ``candidate_schedule_*`` field names, this drives the
+    native research pipeline that scrapes sources to discover NEW candidate
+    articles -- it does not generate content. Content generation from selected
+    candidates is handled by ``check_publication_schedules``.
+    """
     now = datetime.utcnow()
 
     due_publications = Publication.query.filter(
@@ -271,40 +281,6 @@ def check_candidate_content_schedules():
     return {
         'checked_at': now.isoformat(),
         'triggered_count': triggered_count
-    }
-
-
-@celery.task(name='app.tasks.check_research_schedules')
-def check_research_schedules():
-    """
-    Check if any publications are due for research scanning.
-    Runs every hour via Celery Beat. Dispatches research for publications
-    whose last_research_run is null or older than 24 hours.
-    """
-    now = datetime.utcnow()
-    one_day_ago = now - timedelta(hours=24)
-
-    due_publications = Publication.query.filter(
-        Publication.is_active == True,
-        db.or_(
-            Publication.last_research_run == None,
-            Publication.last_research_run <= one_day_ago,
-        )
-    ).all()
-
-    dispatched = 0
-    for pub in due_publications:
-        # Only dispatch if the publication has active sources
-        has_sources = NewsSource.query.filter_by(
-            publication_id=pub.id, is_active=True
-        ).first() is not None
-        if has_sources:
-            research_publication_sources.delay(pub.id)
-            dispatched += 1
-
-    return {
-        'checked_at': now.isoformat(),
-        'dispatched': dispatched,
     }
 
 
