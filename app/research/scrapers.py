@@ -2,6 +2,7 @@
 import io
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -374,6 +375,7 @@ class KeywordSearchScraper(BaseScraper):
     def scrape(self, source) -> List[DiscoveredItem]:
         keywords = source.keywords
         if not keywords:
+            logger.info(f"KeywordSearchScraper: source {source.id} ('{source.name}') has no keywords, skipping")
             return []
 
         api_key = current_app.config.get('SERPAPI_API_KEY')
@@ -381,44 +383,87 @@ class KeywordSearchScraper(BaseScraper):
             logger.warning("SERPAPI_API_KEY not configured, skipping KeywordSearchScraper")
             return []
 
+        # The keywords field holds one term/phrase per line and/or comma-separated.
+        # Google News matches a single coherent query, so run one search per keyword
+        # rather than sending the whole blob (which returns zero results).
+        terms = [t.strip() for t in re.split(r'[,\n\r]+', keywords) if t.strip()]
+        # Preserve order, drop duplicates
+        seen_terms = set()
+        unique_terms = []
+        for t in terms:
+            key = t.lower()
+            if key not in seen_terms:
+                seen_terms.add(key)
+                unique_terms.append(t)
+
+        if not unique_terms:
+            logger.info(f"KeywordSearchScraper: source {source.id} keywords parsed to zero terms, skipping")
+            return []
+
         try:
             from serpapi import GoogleSearch
-            params = {
-                'engine': 'google_news',
-                'q': keywords,
-                'gl': 'us',
-                'hl': 'en',
-                'api_key': api_key,
-            }
-            search = GoogleSearch(params)
-            results = search.get_dict()
         except Exception as e:
-            logger.error(f"SerpAPI search failed for keywords '{keywords}': {e}")
+            logger.error(f"KeywordSearchScraper: failed to import serpapi: {e}")
             return []
 
         items = []
-        for article in results.get('news_results', []):
-            pub_date = None
-            iso_date = article.get('date')
-            if iso_date:
-                try:
-                    pub_date = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    pass
+        seen_urls = set()
+        for term in unique_terms:
+            try:
+                params = {
+                    'engine': 'google_news',
+                    'q': term,
+                    'gl': 'us',
+                    'hl': 'en',
+                    'api_key': api_key,
+                }
+                results = GoogleSearch(params).get_dict()
+            except Exception as e:
+                logger.error(f"SerpAPI search failed for keyword '{term}': {e}")
+                continue
 
-            items.append(DiscoveredItem(
-                url=article.get('link', ''),
-                title=article.get('title'),
-                snippet=article.get('snippet'),
-                author=article.get('source', {}).get('name'),
-                published_date=pub_date,
-                metadata={
-                    'source_name': article.get('source', {}).get('name'),
-                    'thumbnail': article.get('thumbnail'),
-                },
-            ))
+            error = results.get('error')
+            news_results = results.get('news_results', [])
+            if error:
+                logger.info(f"KeywordSearchScraper: keyword '{term}' returned no results ({error})")
+                continue
 
-        return [i for i in items if i.url]
+            term_added = 0
+            for article in news_results:
+                url = article.get('link', '')
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+
+                pub_date = None
+                iso_date = article.get('date')
+                if iso_date:
+                    try:
+                        pub_date = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
+                    except (ValueError, AttributeError):
+                        pass
+
+                items.append(DiscoveredItem(
+                    url=url,
+                    title=article.get('title'),
+                    snippet=article.get('snippet'),
+                    author=article.get('source', {}).get('name'),
+                    published_date=pub_date,
+                    metadata={
+                        'source_name': article.get('source', {}).get('name'),
+                        'thumbnail': article.get('thumbnail'),
+                        'keyword': term,
+                    },
+                ))
+                term_added += 1
+
+            logger.info(f"KeywordSearchScraper: keyword '{term}' → {len(news_results)} results, {term_added} new")
+
+        logger.info(
+            f"KeywordSearchScraper: source {source.id} ('{source.name}') searched "
+            f"{len(unique_terms)} keywords → {len(items)} unique items"
+        )
+        return items
 
 
 class YouTubeSearchScraper(BaseScraper):
@@ -427,6 +472,7 @@ class YouTubeSearchScraper(BaseScraper):
     def scrape(self, source) -> List[DiscoveredItem]:
         keywords = source.keywords
         if not keywords:
+            logger.info(f"YouTubeSearchScraper: source {source.id} ('{source.name}') has no keywords, skipping")
             return []
 
         api_key = current_app.config.get('SERPAPI_API_KEY')
@@ -434,57 +480,96 @@ class YouTubeSearchScraper(BaseScraper):
             logger.warning("SERPAPI_API_KEY not configured, skipping YouTubeSearchScraper")
             return []
 
+        # One term/phrase per line and/or comma-separated. YouTube search matches a
+        # single coherent query, so run one search per keyword rather than sending the
+        # whole blob (which returns nothing).
+        terms = [t.strip() for t in re.split(r'[,\n\r]+', keywords) if t.strip()]
+        # Preserve order, drop duplicates
+        seen_terms = set()
+        unique_terms = []
+        for t in terms:
+            key = t.lower()
+            if key not in seen_terms:
+                seen_terms.add(key)
+                unique_terms.append(t)
+
+        if not unique_terms:
+            logger.info(f"YouTubeSearchScraper: source {source.id} keywords parsed to zero terms, skipping")
+            return []
+
         try:
             from serpapi import GoogleSearch
-            params = {
-                'engine': 'youtube',
-                'search_query': keywords,
-                'gl': 'us',
-                'hl': 'en',
-                'api_key': api_key,
-            }
-            search = GoogleSearch(params)
-            results = search.get_dict()
         except Exception as e:
-            logger.error(f"SerpAPI YouTube search failed for keywords '{keywords}': {e}")
+            logger.error(f"YouTubeSearchScraper: failed to import serpapi: {e}")
             return []
 
         items = []
-        for video in results.get('video_results', []):
-            link = video.get('link', '')
-            if not link:
+        seen_urls = set()
+        for term in unique_terms:
+            try:
+                params = {
+                    'engine': 'youtube',
+                    'search_query': term,
+                    'gl': 'us',
+                    'hl': 'en',
+                    'api_key': api_key,
+                }
+                results = GoogleSearch(params).get_dict()
+            except Exception as e:
+                logger.error(f"SerpAPI YouTube search failed for keyword '{term}': {e}")
                 continue
 
-            pub_date = None
-            published_str = video.get('published_date')
-            if published_str:
-                try:
-                    from dateutil.parser import parse as parse_date
-                    pub_date = parse_date(published_str, fuzzy=True)
-                except (ValueError, TypeError):
-                    pass
+            error = results.get('error')
+            video_results = results.get('video_results', [])
+            if error:
+                logger.info(f"YouTubeSearchScraper: keyword '{term}' returned no results ({error})")
+                continue
 
-            channel = video.get('channel', {})
-            views = video.get('views')
+            term_added = 0
+            for video in video_results:
+                link = video.get('link', '')
+                if not link or link in seen_urls:
+                    continue
+                seen_urls.add(link)
 
-            items.append(DiscoveredItem(
-                url=link,
-                title=video.get('title'),
-                snippet=video.get('description'),
-                author=channel.get('name'),
-                published_date=pub_date,
-                metadata={
-                    'content_type': 'youtube_video',
-                    'channel_name': channel.get('name'),
-                    'channel_link': channel.get('link'),
-                    'channel_verified': channel.get('verified', False),
-                    'views': views,
-                    'length': video.get('length'),
-                    'thumbnail': video.get('thumbnail', {}).get('static') if isinstance(video.get('thumbnail'), dict) else video.get('thumbnail'),
-                    'video_id': video.get('video_id'),
-                },
-            ))
+                pub_date = None
+                published_str = video.get('published_date')
+                if published_str:
+                    try:
+                        from dateutil.parser import parse as parse_date
+                        pub_date = parse_date(published_str, fuzzy=True)
+                    except (ValueError, TypeError):
+                        pass
 
+                channel = video.get('channel', {})
+                views = video.get('views')
+
+                items.append(DiscoveredItem(
+                    url=link,
+                    title=video.get('title'),
+                    snippet=video.get('description'),
+                    author=channel.get('name'),
+                    published_date=pub_date,
+                    metadata={
+                        'content_type': 'youtube_video',
+                        'channel_name': channel.get('name'),
+                        'channel_link': channel.get('link'),
+                        'channel_verified': channel.get('verified', False),
+                        'views': views,
+                        'length': video.get('length'),
+                        'thumbnail': video.get('thumbnail', {}).get('static') if isinstance(video.get('thumbnail'), dict) else video.get('thumbnail'),
+                        'video_id': video.get('video_id'),
+                        'keyword': term,
+                    },
+                ))
+                term_added += 1
+
+            logger.info(f"YouTubeSearchScraper: keyword '{term}' → {len(video_results)} results, {term_added} new")
+
+        logger.info(
+            f"YouTubeSearchScraper: source {source.id} ('{source.name}') searched "
+            f"{len(unique_terms)} keywords → {len(items)} unique items"
+        )
         return items
 
 
