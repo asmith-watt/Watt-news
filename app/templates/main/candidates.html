@@ -77,11 +77,31 @@
     </a>
 </div>
 
+<div id="bulkActionBar"
+     class="hidden sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-3 bg-gray-800 text-white px-4 py-3 rounded-lg shadow">
+    <span id="bulkSelectedCount" class="text-sm font-medium">0 selected</span>
+    <div class="flex flex-wrap gap-2">
+        <button onclick="bulkUpdateStatus('selected')"
+                class="px-3 py-1 text-sm bg-green-500 rounded hover:bg-green-600">Select</button>
+        <button onclick="showBulkRejectModal()"
+                class="px-3 py-1 text-sm bg-red-500 rounded hover:bg-red-600">Reject</button>
+        <button onclick="bulkUpdateStatus('new')"
+                class="px-3 py-1 text-sm bg-gray-400 rounded hover:bg-gray-500">Reset</button>
+    </div>
+    <button onclick="clearSelection()"
+            class="ml-auto text-sm text-gray-300 hover:text-white underline">Clear</button>
+</div>
+
 <div class="bg-white shadow-md rounded-lg overflow-x-auto">
     {% if candidates.items %}
     <table class="min-w-full">
         <thead class="bg-gray-50">
             <tr>
+                <th class="px-4 py-3 text-left">
+                    <input type="checkbox" id="selectAllCandidates" onclick="toggleSelectAll(this)"
+                           class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                           title="Select all on this page">
+                </th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Score', 'score', default_desc=true) }}</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Title', 'title') }}</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Source', 'source') }}</th>
@@ -94,6 +114,10 @@
         <tbody class="divide-y divide-gray-200">
             {% for item in candidates.items %}
             <tr class="hover:bg-gray-50" id="candidate-row-{{ item.id }}">
+                <td class="px-4 py-4">
+                    <input type="checkbox" class="candidate-checkbox h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                           value="{{ item.id }}" data-status="{{ item.status }}" onchange="updateBulkBar()">
+                </td>
                 <td class="px-4 py-4">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                         {% if item.relevance_score >= 70 %}bg-green-100 text-green-800
@@ -447,9 +471,15 @@ function hideRejectModal() {
     modal.classList.remove('flex');
     document.getElementById('rejectionReason').value = '';
     pendingRejectCandidateId = null;
+    bulkRejectMode = false;
 }
 
 function submitRejection() {
+    if (bulkRejectMode) {
+        const rejectionReason = document.getElementById('rejectionReason').value;
+        bulkUpdateStatus('rejected', rejectionReason);
+        return;
+    }
     if (!pendingRejectCandidateId) return;
     const candidateId = pendingRejectCandidateId;
     const rejectionReason = document.getElementById('rejectionReason').value;
@@ -498,6 +528,97 @@ function updateCandidateStatus(candidateId, newStatus) {
     })
     .catch(error => {
         alert('Error updating status: ' + error);
+    });
+}
+
+// ---- Bulk multi-select ----
+let bulkRejectMode = false;
+
+// Which current statuses each target transition is valid from (mirrors backend).
+const BULK_VALID_SOURCES = {
+    selected: ['new', 'rejected'],
+    rejected: ['new', 'selected'],
+    new: ['selected', 'rejected'],
+};
+
+function getSelectedCheckboxes() {
+    return Array.from(document.querySelectorAll('.candidate-checkbox:checked'));
+}
+
+function updateBulkBar() {
+    const selected = getSelectedCheckboxes();
+    const bar = document.getElementById('bulkActionBar');
+    if (selected.length === 0) {
+        bar.classList.add('hidden');
+    } else {
+        bar.classList.remove('hidden');
+        document.getElementById('bulkSelectedCount').textContent =
+            selected.length + ' selected';
+    }
+    // Keep the select-all box in sync.
+    const all = document.querySelectorAll('.candidate-checkbox');
+    const selectAll = document.getElementById('selectAllCandidates');
+    if (selectAll) {
+        selectAll.checked = all.length > 0 && selected.length === all.length;
+        selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function toggleSelectAll(source) {
+    document.querySelectorAll('.candidate-checkbox').forEach(cb => {
+        cb.checked = source.checked;
+    });
+    updateBulkBar();
+}
+
+function clearSelection() {
+    document.querySelectorAll('.candidate-checkbox').forEach(cb => { cb.checked = false; });
+    updateBulkBar();
+}
+
+function showBulkRejectModal() {
+    if (getSelectedCheckboxes().length === 0) return;
+    bulkRejectMode = true;
+    const modal = document.getElementById('rejectModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('rejectionReason').focus();
+}
+
+function bulkUpdateStatus(newStatus, rejectionReason) {
+    const selected = getSelectedCheckboxes();
+    const ids = selected.map(cb => parseInt(cb.value, 10));
+    if (ids.length === 0) return;
+
+    // Warn if some selected rows can't take this action (they'll be skipped server-side).
+    const validSources = BULK_VALID_SOURCES[newStatus];
+    const ineligible = selected.filter(cb => !validSources.includes(cb.dataset.status)).length;
+    if (ineligible > 0) {
+        const verb = newStatus === 'rejected' ? 'rejected'
+                   : newStatus === 'selected' ? 'selected' : 'reset';
+        if (!confirm(`${ineligible} of ${ids.length} selected can't be ${verb} and will be skipped. Continue?`)) {
+            return;
+        }
+    }
+
+    const body = { ids: ids, status: newStatus };
+    if (newStatus === 'rejected') body.rejection_reason = rejectionReason || '';
+
+    fetch('/candidates/bulk-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating candidates: ' + error);
     });
 }
 </script>

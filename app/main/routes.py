@@ -1207,6 +1207,59 @@ def update_candidate_status(id):
     return jsonify({'success': True, 'status': candidate.status})
 
 
+# Which current statuses a given target transition is allowed from.
+# Mirrors the per-row button visibility in candidates.html.
+_BULK_STATUS_SOURCES = {
+    'selected': ('new', 'rejected'),
+    'rejected': ('new', 'selected'),
+    'new': ('selected', 'rejected'),
+}
+
+
+@bp.route('/candidates/bulk-status', methods=['POST'])
+@login_required
+def bulk_candidate_status():
+    """Apply a status change (select/reject/reset) to many candidates at once.
+
+    Candidates whose current status doesn't support the transition, or that the
+    user can't access, are skipped rather than failing the whole batch.
+    """
+    data = request.get_json(silent=True) or {}
+    new_status = data.get('status')
+    if new_status not in _BULK_STATUS_SOURCES:
+        return jsonify({'error': 'Invalid status'}), 400
+
+    ids = data.get('ids')
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'error': 'No candidates selected'}), 400
+
+    rejection_reason = None
+    if new_status == 'rejected':
+        rejection_reason = (data.get('rejection_reason') or '').strip() or None
+
+    allowed_sources = _BULK_STATUS_SOURCES[new_status]
+    candidates = CandidateArticle.query.filter(CandidateArticle.id.in_(ids)).all()
+
+    updated = 0
+    skipped = 0
+    for candidate in candidates:
+        if not current_user.has_role('admin') and not current_user.has_publication_access(candidate.publication_id):
+            skipped += 1
+            continue
+        if candidate.status not in allowed_sources:
+            skipped += 1
+            continue
+        candidate.status = new_status
+        candidate.rejection_reason = rejection_reason if new_status == 'rejected' else None
+        updated += 1
+
+    # Any ids not found in the DB are also skipped.
+    skipped += len(ids) - len(candidates)
+    db.session.commit()
+
+    return jsonify({'success': True, 'updated': updated, 'skipped': skipped})
+
+
 @bp.route('/candidate/<int:id>/create-article', methods=['POST'])
 @login_required
 def create_article_from_candidate(id):

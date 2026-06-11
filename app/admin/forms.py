@@ -122,6 +122,7 @@ class PublicationForm(FlaskForm):
 
 class AuthorProfileForm(FlaskForm):
     name = StringField('Author Name', validators=[DataRequired()])
+    style_guide = TextAreaField('Style Guide', validators=[Optional()])
     sample_articles_text = TextAreaField('Sample Articles (paste article text, separate with ---)', validators=[Optional()])
     sample_article_urls = TextAreaField('Sample Article URLs (one per line)', validators=[Optional()])
     is_default = BooleanField('Default Author')
