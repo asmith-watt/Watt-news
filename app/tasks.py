@@ -325,6 +325,7 @@ def research_publication_sources(self, publication_id):
     enrichment_min_score = current_app.config.get('ENRICHMENT_MIN_SCORE', 25.0)
     enrichment_budget = current_app.config.get('ENRICHMENT_MAX_PER_RUN', 50)
     triage_enabled = current_app.config.get('TRIAGE_ENABLED', True)
+    max_age_days = current_app.config.get('RESEARCH_RECENCY_DAYS', 30)
 
     stats = {
         'sources_scanned': 0,
@@ -391,8 +392,9 @@ def research_publication_sources(self, publication_id):
                         stats['skipped_excluded'] += 1
                         continue
 
-                # Max-age filter: skip items older than 90 days
-                # Check the scraper-provided date first, then URL date pattern
+                # Max-age filter: skip items older than the configured window.
+                # Check the scraper-provided date first, then URL date pattern.
+                # Items with no parseable date are kept (filter can't judge them).
                 item_date = item.published_date
                 if not item_date:
                     item_date = _extract_date_from_url(item.url)
@@ -402,7 +404,7 @@ def research_publication_sources(self, publication_id):
                     else:
                         from datetime import timezone
                         age_days = (datetime.now(timezone.utc) - item_date).days
-                    if age_days > 90:
+                    if age_days > max_age_days:
                         stats['skipped_excluded'] += 1
                         continue
 

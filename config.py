@@ -27,6 +27,10 @@ class Config:
     SERPAPI_API_KEY = os.environ.get('SERPAPI_API_KEY')
     ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 
+    # Discovery max-age filter: drop candidates whose published date is older
+    # than this many days. Items without a parseable date are kept.
+    RESEARCH_RECENCY_DAYS = int(os.environ.get('RESEARCH_RECENCY_DAYS', 30))
+
     # n8n Workflow Triggers
     N8N_CONTENT_WORKFLOW_URL = os.environ.get('N8N_CONTENT_WORKFLOW_URL')
     N8N_IMAGE_WORKFLOW_URL = os.environ.get('N8N_IMAGE_WORKFLOW_URL')

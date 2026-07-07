@@ -26,6 +26,85 @@ class DiscoveredItem:
     metadata: dict = field(default_factory=dict)
 
 
+def parse_google_news_date(value: Optional[str]) -> Optional[datetime]:
+    """Parse SerpAPI google_news `date` fields.
+
+    Format is e.g. '07/07/2026, 01:15 PM, +0000 UTC' — NOT ISO, so
+    datetime.fromisoformat fails on every result. Returns a tz-aware datetime,
+    or None if the value is missing/unparseable.
+    """
+    if not value:
+        return None
+    try:
+        # strptime's %z accepts '+0000' but not the trailing ' UTC'.
+        return datetime.strptime(value.replace(' UTC', '').strip(),
+                                 '%m/%d/%Y, %I:%M %p, %z')
+    except (ValueError, AttributeError):
+        return None
+
+
+# Relative-age units → seconds. YouTube (via SerpAPI) reports ages like
+# '4y ago', '11mo ago', '2d ago', '13h ago'. Order matters for the regex:
+# 'mo' must be tried before 'm'.
+_REL_AGE_UNITS = {
+    's': 1,
+    'm': 60,
+    'h': 3600,
+    'd': 86400,
+    'w': 604800,
+    'mo': 2592000,      # ~30 days
+    'y': 31536000,      # ~365 days
+}
+_REL_AGE_RE = re.compile(r'(\d+)\s*(mo|[smhdwy])\s+ago', re.IGNORECASE)
+
+
+def parse_relative_date(value: Optional[str], now: Optional[datetime] = None) -> Optional[datetime]:
+    """Parse relative age strings like '4y ago' / '11mo ago' / '2d ago'.
+
+    SerpAPI's youtube engine returns these (optionally prefixed 'Streamed ').
+    dateutil's fuzzy parser mis-reads them (it treats the leading number as a
+    day-of-month in the current month), so a 4-year-old video looks brand new.
+    Returns a tz-aware UTC datetime, or None if unparseable.
+    """
+    if not value:
+        return None
+    match = _REL_AGE_RE.search(value)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    seconds = _REL_AGE_UNITS.get(unit)
+    if seconds is None:
+        return None
+    from datetime import timezone, timedelta
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return now - timedelta(seconds=amount * seconds)
+
+
+# YouTube `sp` filter tokens for the "upload date" facet, paired with the max
+# age (days) each window covers. Ordered narrowest → widest. Used to pre-filter
+# results server-side so we don't waste API quota pulling old videos.
+_YT_UPLOAD_DATE_TOKENS = [
+    (1, 'EgIIAg=='),      # today
+    (7, 'EgIIAw=='),      # this week
+    (30, 'EgIIBA=='),     # this month
+    (365, 'EgIIBQ=='),    # this year
+]
+
+
+def youtube_upload_date_token(recency_days: int) -> Optional[str]:
+    """Pick the `sp` token for the smallest upload-date window that still covers
+    `recency_days`. Rounding UP guarantees the server-side filter is never
+    tighter than the client-side cutoff (which stays the precise arbiter).
+    Returns None when the window is wider than a year (no useful native filter).
+    """
+    for max_days, token in _YT_UPLOAD_DATE_TOKENS:
+        if recency_days <= max_days:
+            return token
+    return None
+
+
 class BaseScraper:
     """Abstract base class for source scrapers."""
 
@@ -435,13 +514,7 @@ class KeywordSearchScraper(BaseScraper):
                     continue
                 seen_urls.add(url)
 
-                pub_date = None
-                iso_date = article.get('date')
-                if iso_date:
-                    try:
-                        pub_date = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
-                    except (ValueError, AttributeError):
-                        pass
+                pub_date = parse_google_news_date(article.get('date'))
 
                 items.append(DiscoveredItem(
                     url=url,
@@ -503,6 +576,11 @@ class YouTubeSearchScraper(BaseScraper):
             logger.error(f"YouTubeSearchScraper: failed to import serpapi: {e}")
             return []
 
+        # Pre-filter by upload date server-side so we don't burn API quota on
+        # old videos. The client-side cutoff in tasks.py remains the exact filter.
+        recency_days = current_app.config.get('RESEARCH_RECENCY_DAYS', 30)
+        sp_token = youtube_upload_date_token(recency_days)
+
         items = []
         seen_urls = set()
         for term in unique_terms:
@@ -514,6 +592,8 @@ class YouTubeSearchScraper(BaseScraper):
                     'hl': 'en',
                     'api_key': api_key,
                 }
+                if sp_token:
+                    params['sp'] = sp_token
                 results = GoogleSearch(params).get_dict()
             except Exception as e:
                 logger.error(f"SerpAPI YouTube search failed for keyword '{term}': {e}")
@@ -532,14 +612,7 @@ class YouTubeSearchScraper(BaseScraper):
                     continue
                 seen_urls.add(link)
 
-                pub_date = None
-                published_str = video.get('published_date')
-                if published_str:
-                    try:
-                        from dateutil.parser import parse as parse_date
-                        pub_date = parse_date(published_str, fuzzy=True)
-                    except (ValueError, TypeError):
-                        pass
+                pub_date = parse_relative_date(video.get('published_date'))
 
                 channel = video.get('channel', {})
                 views = video.get('views')
