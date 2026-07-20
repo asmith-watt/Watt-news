@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="{{ url_for('admin.news_sources', pub_id=publication.id) }}" class="text-blue-600 hover:underline">&larr; Back to Sources</a>
+</div>
+
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-gray-800">Source Audits &mdash; {{ publication.name }}</h1>
+    <form method="POST" action="{{ url_for('admin.trigger_source_audit', pub_id=publication.id) }}" class="inline">
+        <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+            Run New Audit
+        </button>
+    </form>
+</div>
+
+<div class="bg-white shadow-md rounded-lg overflow-hidden">
+    {% if audits %}
+    <div class="overflow-x-auto">
+    <table class="min-w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Run</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Health</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Coverage</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Summary</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for audit in audits %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-4 text-sm text-gray-600">{{ audit.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+                <td class="px-4 py-4">
+                    {% set sc = {'completed': 'bg-green-100 text-green-800', 'running': 'bg-blue-100 text-blue-800', 'pending': 'bg-gray-100 text-gray-700', 'failed': 'bg-red-100 text-red-800'} %}
+                    <span class="px-2 py-1 text-xs rounded-full {{ sc.get(audit.status, 'bg-gray-100 text-gray-700') }}">{{ audit.status }}</span>
+                </td>
+                <td class="px-4 py-4 text-center text-sm">{{ audit.health_score if audit.health_score is not none else '--' }}</td>
+                <td class="px-4 py-4 text-center text-sm">{{ audit.coverage_score if audit.coverage_score is not none else '--' }}</td>
+                <td class="px-4 py-4 text-sm text-gray-600">{{ (audit.summary or '')[:120] }}</td>
+                <td class="px-4 py-4 text-sm">
+                    <a href="{{ url_for('admin.source_audit_detail', pub_id=publication.id, audit_id=audit.id) }}"
+                       class="text-blue-600 hover:underline">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="px-6 py-12 text-center text-gray-500">
+        No audits yet. Run one to check whether this publication is watching the right places and whether each source is configured correctly.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

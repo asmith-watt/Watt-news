@@ -6,9 +6,11 @@ from urllib.parse import urlparse
 import requests
 from flask import current_app
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.celery import celery
 from app import db
-from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing, AuthorProfile
+from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing, AuthorProfile, SourceAudit
 
 logger = logging.getLogger(__name__)
 
@@ -984,3 +986,106 @@ def generate_author_style_guide(author_profile_id):
     except Exception as e:
         logger.error(f"Style guide generation failed for profile {author_profile_id}: {e}")
         return {'error': str(e)}
+
+
+@celery.task(name='app.tasks.run_source_audit', time_limit=1800, soft_time_limit=1680)
+def run_source_audit(audit_id):
+    """Run a holistic source audit for a publication.
+
+    Combines the deterministic technical/config/yield probes with the LLM
+    coverage assessment, merges the findings, computes headline scores, and
+    persists everything onto the SourceAudit row. Read-only with respect to the
+    sources themselves — it never mutates NewsSource config.
+    """
+    from app.research import audit as source_audit
+    from app.research import audit_coverage
+
+    record = SourceAudit.query.get(audit_id)
+    if not record:
+        logger.error(f"Source audit {audit_id} not found")
+        return {'error': 'audit not found'}
+
+    publication = Publication.query.get(record.publication_id)
+    if not publication:
+        record.status = 'failed'
+        record.message = 'Publication not found'
+        record.completed_at = datetime.utcnow()
+        db.session.commit()
+        return {'error': 'publication not found'}
+
+    record.status = 'running'
+    db.session.commit()
+
+    try:
+        sources = NewsSource.query.filter_by(publication_id=publication.id).all()
+
+        technical = source_audit.run_technical_audit(publication, sources, live=True)
+        coverage = audit_coverage.run_coverage_audit(publication, sources, live=True)
+
+        # Merge findings; assign each a stable sequential id for the UI/apply flow.
+        findings = list(technical) + list(coverage.get('findings') or [])
+        severity_rank = {'critical': 0, 'warning': 1, 'info': 2}
+        findings.sort(key=lambda f: severity_rank.get(f.get('severity'), 3))
+        for i, f in enumerate(findings):
+            f['id'] = i
+
+        health = source_audit.compute_health_score(technical, sources)
+        coverage_score = coverage.get('coverage_score')
+
+        record.findings = findings
+        record.health_score = health
+        record.coverage_score = coverage_score
+        record.summary = _build_audit_summary(findings, health, coverage_score,
+                                               coverage.get('summary'))
+        record.status = 'completed'
+        record.completed_at = datetime.utcnow()
+        db.session.commit()
+
+        _notify_safe(publication, 'source_audit', {
+            'total_findings': len(findings),
+            'health_score': health,
+            'coverage_score': coverage_score,
+        })
+
+        logger.info(
+            f"Source audit {audit_id} complete: {len(findings)} findings, "
+            f"health={health}, coverage={coverage_score}"
+        )
+        return {'audit_id': audit_id, 'findings': len(findings),
+                'health_score': health, 'coverage_score': coverage_score}
+
+    except SoftTimeLimitExceeded:
+        db.session.rollback()
+        record.status = 'failed'
+        record.message = 'Audit timed out'
+        record.completed_at = datetime.utcnow()
+        db.session.commit()
+        logger.error(f"Source audit {audit_id} timed out")
+        return {'error': 'timed out'}
+    except Exception as e:
+        db.session.rollback()
+        record.status = 'failed'
+        record.message = str(e)[:1000]
+        record.completed_at = datetime.utcnow()
+        db.session.commit()
+        logger.error(f"Source audit {audit_id} failed: {e}", exc_info=True)
+        return {'error': str(e)}
+
+
+def _build_audit_summary(findings, health, coverage_score, coverage_summary):
+    """Compose a short human-readable overview of the audit result."""
+    counts = {'critical': 0, 'warning': 0, 'info': 0}
+    for f in findings:
+        counts[f.get('severity', 'info')] = counts.get(f.get('severity', 'info'), 0) + 1
+
+    parts = [
+        f"{counts['critical']} critical, {counts['warning']} warning, "
+        f"{counts['info']} informational finding(s)."
+    ]
+    if health is not None:
+        parts.append(f"Technical health score: {health}/100.")
+    if coverage_score is not None:
+        parts.append(f"Coverage score: {coverage_score}/100.")
+    if coverage_summary:
+        parts.append(coverage_summary.strip())
+    return ' '.join(parts)

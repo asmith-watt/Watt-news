@@ -176,6 +176,37 @@ class ResearchLog(db.Model):
         return f'<ResearchLog {self.level} {self.phase}: {self.message[:50]}>'
 
 
+class SourceAudit(db.Model):
+    """A user-triggered holistic audit of a publication's news sources.
+
+    Combines deterministic per-source technical health checks, candidate yield
+    signals, and an LLM coverage assessment (is the publication watching the
+    right places for its stated industry?). Findings are stored as JSON so the
+    findings UI can render per-source status and one-click apply actions.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    triggered_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    status = db.Column(db.String(32), default='pending', index=True)  # pending, running, completed, failed
+    message = db.Column(db.Text)  # error detail when status == 'failed'
+
+    # 0-100 headline scores, null until computed
+    health_score = db.Column(db.Integer)    # technical: are sources correctly configured & reachable?
+    coverage_score = db.Column(db.Integer)  # strategic: are the right places being watched?
+
+    summary = db.Column(db.Text)            # short human-readable overview
+    findings = db.Column(db.JSON)           # list of finding dicts (see app/research/audit.py)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    completed_at = db.Column(db.DateTime)
+
+    publication = db.relationship('Publication', backref='source_audits')
+    triggered_by = db.relationship('User', backref='triggered_source_audits')
+
+    def __repr__(self):
+        return f'<SourceAudit {self.id} pub={self.publication_id} ({self.status})>'
+
+
 class AuthorProfile(db.Model):
     """An author writing style/personality for content generation."""
     id = db.Column(db.Integer, primary_key=True)

@@ -8,6 +8,15 @@
 <div class="mb-6 flex justify-between items-center">
     <h1 class="text-3xl font-bold text-gray-800">News Sources for {{ publication.name }}</h1>
     <div class="flex space-x-3">
+        <a href="{{ url_for('admin.source_audits', pub_id=publication.id) }}"
+           class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+            Audit History
+        </a>
+        <form method="POST" action="{{ url_for('admin.trigger_source_audit', pub_id=publication.id) }}" class="inline">
+            <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                Run Source Audit
+            </button>
+        </form>
         <a href="{{ url_for('admin.research_logs', pub_id=publication.id) }}"
            class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
             Research Logs

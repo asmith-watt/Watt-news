@@ -7,7 +7,7 @@ import secrets
 import requests
 from sqlalchemy import func, case
 from app import db
-from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle, ResearchLog, AuthorProfile
+from app.models import Publication, NewsSource, User, Role, NewsletterTemplate, CandidateArticle, ResearchLog, AuthorProfile, SourceAudit
 from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm, AuthorProfileForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
@@ -359,6 +359,170 @@ def research_logs(pub_id):
                            publication=publication, logs=logs, sources=sources,
                            source_filter=source_filter, level_filter=level_filter,
                            phase_filter=phase_filter)
+
+
+# Source Audit
+
+# Whitelist of apply-action types → required params. Mirrors the ACTION_*
+# constants in app/research/audit.py. Any action not listed here is refused.
+_AUDIT_APPLY_ACTIONS = {
+    'update_url': {'source_id', 'url'},
+    'deactivate_source': {'source_id'},
+    'fix_source_type': {'source_id', 'source_type'},
+    'add_source': {'name', 'source_type'},
+    'delete_duplicate': {'source_id'},
+}
+
+
+@bp.route('/publications/<int:pub_id>/source-audits')
+@login_required
+@admin_required
+def source_audits(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    audits = (SourceAudit.query
+              .filter_by(publication_id=pub_id)
+              .order_by(SourceAudit.created_at.desc())
+              .all())
+    return render_template('admin/source_audits.html', title='Source Audits',
+                           publication=publication, audits=audits)
+
+
+@bp.route('/publications/<int:pub_id>/source-audits/new', methods=['POST'])
+@login_required
+@admin_required
+def trigger_source_audit(pub_id):
+    publication = Publication.query.get_or_404(pub_id)
+    audit = SourceAudit(
+        publication_id=pub_id,
+        triggered_by_id=current_user.id,
+        status='pending',
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    from app.tasks import run_source_audit
+    run_source_audit.delay(audit.id)
+
+    flash('Source audit started — this can take a couple of minutes. Refresh for results.', 'success')
+    return redirect(url_for('admin.source_audit_detail', pub_id=pub_id, audit_id=audit.id))
+
+
+@bp.route('/publications/<int:pub_id>/source-audits/<int:audit_id>')
+@login_required
+@admin_required
+def source_audit_detail(pub_id, audit_id):
+    publication = Publication.query.get_or_404(pub_id)
+    audit = SourceAudit.query.get_or_404(audit_id)
+    if audit.publication_id != pub_id:
+        flash('Invalid audit for this publication', 'error')
+        return redirect(url_for('admin.source_audits', pub_id=pub_id))
+
+    findings = audit.findings or []
+    severity_counts = {'critical': 0, 'warning': 0, 'info': 0}
+    for f in findings:
+        sev = f.get('severity', 'info')
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+    return render_template('admin/source_audit_detail.html', title='Source Audit',
+                           publication=publication, audit=audit, findings=findings,
+                           severity_counts=severity_counts)
+
+
+@bp.route('/publications/<int:pub_id>/source-audits/<int:audit_id>/apply', methods=['POST'])
+@login_required
+@admin_required
+def apply_audit_finding(pub_id, audit_id):
+    publication = Publication.query.get_or_404(pub_id)
+    audit = SourceAudit.query.get_or_404(audit_id)
+    if audit.publication_id != pub_id:
+        flash('Invalid audit for this publication', 'error')
+        return redirect(url_for('admin.source_audits', pub_id=pub_id))
+
+    redirect_target = redirect(url_for('admin.source_audit_detail', pub_id=pub_id, audit_id=audit_id))
+
+    finding_id = request.form.get('finding_id', type=int)
+    findings = audit.findings or []
+    finding = next((f for f in findings if f.get('id') == finding_id), None)
+    if finding is None:
+        flash('Finding not found.', 'error')
+        return redirect_target
+
+    action = finding.get('action')
+    if not action or action.get('type') not in _AUDIT_APPLY_ACTIONS:
+        flash('This finding has no applicable action.', 'error')
+        return redirect_target
+    if finding.get('applied'):
+        flash('This action has already been applied.', 'info')
+        return redirect_target
+
+    action_type = action['type']
+    params = action.get('params') or {}
+    required = _AUDIT_APPLY_ACTIONS[action_type]
+    if not required.issubset(params.keys()):
+        flash('This action is missing required data and cannot be applied.', 'error')
+        return redirect_target
+
+    ok, message = _apply_source_action(pub_id, action_type, params)
+    if not ok:
+        flash(message, 'error')
+        return redirect_target
+
+    # Mark the finding applied so the button disappears. Reassign the list so
+    # SQLAlchemy detects the JSON change.
+    for f in findings:
+        if f.get('id') == finding_id:
+            f['applied'] = True
+    audit.findings = list(findings)
+    db.session.commit()
+
+    flash(message, 'success')
+    return redirect_target
+
+
+def _apply_source_action(pub_id, action_type, params):
+    """Execute one whitelisted audit fix. Returns (ok, message).
+
+    Every source-targeted action re-verifies the source belongs to pub_id, so a
+    stale or tampered finding cannot touch another publication's data.
+    """
+    def _owned_source(source_id):
+        s = NewsSource.query.get(source_id)
+        if s is None or s.publication_id != pub_id:
+            return None
+        return s
+
+    if action_type == 'add_source':
+        stype = params.get('source_type')
+        source = NewsSource(
+            publication_id=pub_id,
+            name=params.get('name'),
+            source_type=stype,
+            url=params.get('url'),
+            keywords=params.get('keywords'),
+            is_active=True,
+        )
+        db.session.add(source)
+        return True, f'Added source "{source.name}".'
+
+    source = _owned_source(params.get('source_id'))
+    if source is None:
+        return False, 'The target source no longer exists.'
+
+    if action_type == 'update_url':
+        source.url = params.get('url')
+        return True, f'Updated URL for "{source.name}".'
+    if action_type == 'deactivate_source':
+        source.is_active = False
+        return True, f'Deactivated "{source.name}".'
+    if action_type == 'fix_source_type':
+        source.source_type = params.get('source_type')
+        return True, f'Set source type for "{source.name}".'
+    if action_type == 'delete_duplicate':
+        name = source.name
+        db.session.delete(source)
+        return True, f'Deleted duplicate source "{name}".'
+
+    return False, 'Unknown action.'
 
 
 # Author Profile CRUD
