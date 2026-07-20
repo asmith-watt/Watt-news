@@ -63,7 +63,22 @@ ACTION_DELETE_DUPLICATE = 'delete_duplicate'
 PROBE_TIMEOUT = 12          # seconds per HTTP probe
 STALE_FEED_DAYS = 90        # a feed with nothing newer than this is "stale"
 YIELD_WINDOW_DAYS = 90      # window for the "produced no candidates" check
-_USER_AGENT = 'WattAutomation-SourceAudit/1.0 (+source health probe)'
+
+# Send browser-like headers. A bare/custom User-Agent gets 401/403'd by
+# Cloudflare/Akamai-fronted sites that a real browser (and the real research
+# pipeline via feedparser/Firecrawl) loads fine — those are false positives.
+_PROBE_HEADERS = {
+    'User-Agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                   'AppleWebKit/537.36 (KHTML, like Gecko) '
+                   'Chrome/125.0.0.0 Safari/537.36'),
+    'Accept': ('text/html,application/xhtml+xml,application/xml,'
+               'application/rss+xml,application/atom+xml;q=0.9,*/*;q=0.8'),
+    'Accept-Language': 'en-US,en;q=0.9',
+}
+
+# Statuses that usually mean bot protection blocked the audit probe rather than
+# the source being gone — the real scraper may still succeed.
+_BLOCKED_STATUSES = {401, 403, 429}
 
 # Source types that have a real scraper registered (discover content). Types
 # outside this set never produce candidates. Kept as a literal rather than
@@ -122,7 +137,7 @@ def _fetch(url, method='GET'):
             method, url,
             timeout=PROBE_TIMEOUT,
             allow_redirects=True,
-            headers={'User-Agent': _USER_AGENT},
+            headers=_PROBE_HEADERS,
             stream=True,  # avoid pulling large bodies we don't need
         )
         return resp, None
@@ -178,11 +193,17 @@ def _probe_rss(source):
 
     resp, error = _fetch(url)
     if error:
+        # Our HTTP client failed. feedparser uses its own client/UA (what the
+        # real scraper runs), so try it directly before declaring the feed dead.
+        entries = _feedparser_entries(url)
+        if entries:
+            findings.extend(_rss_content_findings(source, url, entries))
+            return findings
         findings.append(_finding(
             'rss_unreachable', SEVERITY_CRITICAL, CATEGORY_TECHNICAL,
             'Feed is unreachable',
-            f'Fetching {url} failed: {error}. This feed silently yields nothing '
-            'during research (scrapers swallow the error).',
+            f'Fetching {url} failed: {error}, and feedparser could not read it '
+            'either. This feed silently yields nothing during research.',
             'Verify the feed still exists; update the URL or deactivate the source.',
             source=source,
         ))
@@ -198,6 +219,27 @@ def _probe_rss(source):
     finally:
         resp.close()
 
+    if status in _BLOCKED_STATUSES:
+        # Likely bot protection. feedparser (different client) may still get in,
+        # exactly as the real scraper would — check before flagging.
+        entries = _feedparser_entries(url)
+        if entries:
+            findings.extend(_rss_content_findings(source, url, entries))
+        else:
+            findings.append(_finding(
+                'rss_blocked', SEVERITY_WARNING, CATEGORY_TECHNICAL,
+                f'Feed blocked the health check (HTTP {status})',
+                f'{url} returned HTTP {status} to the audit probe — usually bot '
+                'protection (Cloudflare/Akamai). The real research pipeline uses a '
+                'different client and may still succeed, so this is not proof the '
+                'feed is broken.',
+                'Open the URL in a browser: if it loads, no action is needed; if it '
+                'is genuinely gone, update or deactivate the source.',
+                source=source,
+            ))
+        _append_rss_redirect(findings, source, url, redirect)
+        return findings
+
     if status >= 400:
         findings.append(_finding(
             'rss_http_error', SEVERITY_CRITICAL, CATEGORY_TECHNICAL,
@@ -208,16 +250,30 @@ def _probe_rss(source):
         ))
         return findings
 
-    parsed = feedparser.parse(body)
-    entries = parsed.entries or []
+    findings.extend(_rss_content_findings(source, url, feedparser.parse(body).entries or [],
+                                          content_type))
+    _append_rss_redirect(findings, source, url, redirect)
+    return findings
 
+
+def _feedparser_entries(url):
+    """Parse a feed via feedparser's own HTTP client. Returns entries or []."""
+    try:
+        return feedparser.parse(url).entries or []
+    except Exception:
+        return []
+
+
+def _rss_content_findings(source, url, entries, content_type=''):
+    """No-entries / staleness findings given a set of parsed feed entries."""
+    out = []
     if not entries:
         looks_html = 'html' in content_type and 'xml' not in content_type
         detail = (
             f'{url} is reachable but no feed entries were parsed.'
             + (' The URL appears to serve an HTML page, not a feed.' if looks_html else '')
         )
-        findings.append(_finding(
+        out.append(_finding(
             'rss_no_entries', SEVERITY_WARNING, CATEGORY_TECHNICAL,
             'Feed parsed but has no items',
             detail,
@@ -225,22 +281,26 @@ def _probe_rss(source):
             'A genuinely empty feed can be ignored.',
             source=source,
         ))
-    else:
-        newest = _newest_entry_date(entries)
-        if newest is not None:
-            age_days = (datetime.utcnow() - newest).days
-            if age_days > STALE_FEED_DAYS:
-                findings.append(_finding(
-                    'rss_stale', SEVERITY_WARNING, CATEGORY_TECHNICAL,
-                    'Feed looks stale',
-                    f'The newest item in {url} is {age_days} days old '
-                    f'(threshold {STALE_FEED_DAYS}).',
-                    'Check whether the publisher still updates this feed; consider '
-                    'replacing it.',
-                    source=source,
-                ))
+        return out
 
-    # Redirect handling is advisory even when the feed is otherwise healthy.
+    newest = _newest_entry_date(entries)
+    if newest is not None:
+        age_days = (datetime.utcnow() - newest).days
+        if age_days > STALE_FEED_DAYS:
+            out.append(_finding(
+                'rss_stale', SEVERITY_WARNING, CATEGORY_TECHNICAL,
+                'Feed looks stale',
+                f'The newest item in {url} is {age_days} days old '
+                f'(threshold {STALE_FEED_DAYS}).',
+                'Check whether the publisher still updates this feed; consider '
+                'replacing it.',
+                source=source,
+            ))
+    return out
+
+
+def _append_rss_redirect(findings, source, url, redirect):
+    """Advisory redirect finding, appended even when the feed is otherwise healthy."""
     if redirect:
         findings.append(_finding(
             'rss_redirect', SEVERITY_INFO, CATEGORY_CONFIG,
@@ -251,8 +311,6 @@ def _probe_rss(source):
             action={'type': ACTION_UPDATE_URL,
                     'params': {'source_id': source.id, 'url': redirect}},
         ))
-
-    return findings
 
 
 def _newest_entry_date(entries):
@@ -310,6 +368,35 @@ def _probe_news_site(source):
     redirect = _redirect_target(resp)
     resp.close()
 
+    if status in _BLOCKED_STATUSES:
+        # Bot protection blocked the simple probe. News Site discovery runs
+        # through Firecrawl (browser-rendered), so escalate to a Firecrawl fetch
+        # — the real pipeline's own path — before flagging anything.
+        has_fc = bool(current_app.config.get('FIRECRAWL_API_KEY'))
+        if has_fc and _firecrawl_reachable(url):
+            # Firecrawl gets in fine → the real pipeline works → false positive.
+            _append_news_redirect(findings, source, url, redirect)
+            return findings
+        if has_fc:
+            detail = (f'{url} returned HTTP {status} to the audit probe, and a '
+                      'browser-grade Firecrawl fetch (the real pipeline path) also '
+                      'could not retrieve it — so discovery likely fails here too.')
+        else:
+            detail = (f'{url} returned HTTP {status} to the audit probe — usually bot '
+                      'protection (Cloudflare/Akamai). The real pipeline fetches this '
+                      'site via Firecrawl, which may still succeed; set '
+                      'FIRECRAWL_API_KEY to let the audit verify.')
+        findings.append(_finding(
+            'news_blocked', SEVERITY_WARNING, CATEGORY_TECHNICAL,
+            f'Site blocked the health check (HTTP {status})',
+            detail,
+            'Open the URL in a browser: if it loads, it may still be scrapable; if it '
+            'is genuinely gone, update or deactivate the source.',
+            source=source,
+        ))
+        _append_news_redirect(findings, source, url, redirect)
+        return findings
+
     if status >= 400:
         findings.append(_finding(
             'news_http_error', SEVERITY_CRITICAL, CATEGORY_TECHNICAL,
@@ -333,6 +420,12 @@ def _probe_news_site(source):
             source=source,
         ))
 
+    _append_news_redirect(findings, source, url, redirect)
+    return findings
+
+
+def _append_news_redirect(findings, source, url, redirect):
+    """Advisory redirect finding for a News Site source."""
     if redirect:
         findings.append(_finding(
             'news_redirect', SEVERITY_INFO, CATEGORY_CONFIG,
@@ -344,7 +437,28 @@ def _probe_news_site(source):
                     'params': {'source_id': source.id, 'url': redirect}},
         ))
 
-    return findings
+
+def _firecrawl_reachable(url):
+    """True if Firecrawl can fetch real content from the URL.
+
+    Mirrors the News Site scraper's own fetch path, so it clears bot-protection
+    false positives: if the browser-rendered Firecrawl fetch gets in, the real
+    pipeline will too. Only called for the handful of sources that already
+    returned a blocked status, so credit spend stays bounded. Never raises.
+    """
+    api_key = current_app.config.get('FIRECRAWL_API_KEY')
+    if not api_key:
+        return False
+    try:
+        from app.research.enrichment import _firecrawl_scrape
+        data = _firecrawl_scrape(url, api_key)
+    except Exception as e:
+        logger.warning(f'Audit Firecrawl reachability check failed for {url}: {e}')
+        return False
+    if not data:
+        return False
+    markdown = (data.get('markdown') or '').strip()
+    return len(markdown) > 50  # got real page content, not an empty/blocked shell
 
 
 def _parse_terms(keywords):
