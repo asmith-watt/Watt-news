@@ -303,6 +303,66 @@ def edit_news_source(pub_id, id):
     return render_template('admin/news_source_form.html', title='Edit News Source', form=form, publication=publication, source=source)
 
 
+@bp.route('/publications/<int:pub_id>/sources/config-assistant', methods=['POST'])
+@login_required
+@admin_required
+def source_config_assistant(pub_id):
+    """Conversational helper for authoring a source's config JSON.
+
+    Stateless: the browser holds the transcript and posts it back each turn,
+    along with the values currently typed into the form (which may not be saved
+    yet), so the assistant reasons about what the editor is actually looking at.
+    """
+    from app.research.config_assistant import run_turn, sanitize_history
+
+    publication = Publication.query.get_or_404(pub_id)
+    payload = request.get_json(silent=True) or {}
+
+    messages = sanitize_history(payload.get('messages'))
+    if not messages:
+        return jsonify({'error': 'No message to respond to'}), 400
+
+    source_ctx = {
+        'name': (payload.get('name') or '')[:256],
+        'source_type': (payload.get('source_type') or '')[:64],
+        'url': (payload.get('url') or '')[:512],
+        'keywords': (payload.get('keywords') or '')[:2000],
+        'current_config': (payload.get('current_config') or '')[:8000],
+    }
+
+    try:
+        result = run_turn(messages, source_ctx, publication)
+    except Exception as e:
+        current_app.logger.error(f"Config assistant failed for publication {pub_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Assistant failed: {e}'}), 500
+
+    return jsonify(result)
+
+
+@bp.route('/publications/<int:pub_id>/sources/config-test', methods=['POST'])
+@login_required
+@admin_required
+def source_config_test(pub_id):
+    """Dry-run the discovery step of a drafted Data config without saving it."""
+    from app.research.config_assistant import dry_run_discovery
+
+    Publication.query.get_or_404(pub_id)
+    payload = request.get_json(silent=True) or {}
+
+    raw_config = payload.get('config') or ''
+    try:
+        config = json.loads(raw_config, strict=False) if isinstance(raw_config, str) else raw_config
+    except json.JSONDecodeError as e:
+        return jsonify({'ok': False, 'error': f'Invalid JSON: {e}', 'urls': [], 'log': []})
+
+    result = dry_run_discovery(
+        config,
+        source_url=payload.get('url') or None,
+        source_name=payload.get('name') or '(unsaved source)',
+    )
+    return jsonify(result)
+
+
 @bp.route('/publications/<int:pub_id>/sources/<int:id>/delete', methods=['POST'])
 @login_required
 @admin_required

@@ -58,10 +58,53 @@
             <div class="mb-4">
                 <div class="flex items-center justify-between mb-2">
                     {{ form.config_json.label(class="block text-gray-700 font-bold") }}
-                    <button type="button" onclick="document.getElementById('config-docs').classList.toggle('hidden')"
-                            class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
-                        Show/Hide Documentation
-                    </button>
+                    <div class="flex items-center space-x-3">
+                        <button type="button" onclick="document.getElementById('config-assistant').classList.toggle('hidden')"
+                                class="text-sm text-purple-700 hover:text-purple-900 hover:underline font-semibold">
+                            Config Assistant
+                        </button>
+                        <button type="button" onclick="document.getElementById('config-docs').classList.toggle('hidden')"
+                                class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                            Show/Hide Documentation
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Conversational config builder -->
+                <div id="config-assistant" class="hidden mb-4 border border-purple-200 bg-purple-50 rounded-lg p-4">
+                    <h3 class="font-bold text-purple-900 mb-1">Config Assistant</h3>
+                    <p class="text-sm text-gray-700 mb-3">
+                        Describe what you want to pull in and the assistant will look at the source
+                        itself &mdash; the landing page, the PDF URLs, the API response &mdash; and build the
+                        JSON for you. Ask follow-up questions to refine it.
+                    </p>
+
+                    <div id="assistant-log" class="space-y-3 mb-3 max-h-96 overflow-y-auto"></div>
+
+                    <div id="assistant-suggestions" class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" class="assistant-chip text-xs px-2 py-1 bg-white border border-purple-300 rounded-full text-purple-800 hover:bg-purple-100">
+                            Set this source up from its URL
+                        </button>
+                        <button type="button" class="assistant-chip text-xs px-2 py-1 bg-white border border-purple-300 rounded-full text-purple-800 hover:bg-purple-100">
+                            I want the monthly PDF report from this site
+                        </button>
+                        <button type="button" class="assistant-chip text-xs px-2 py-1 bg-white border border-purple-300 rounded-full text-purple-800 hover:bg-purple-100">
+                            Why is my current config finding nothing?
+                        </button>
+                    </div>
+
+                    <div class="flex space-x-2">
+                        <textarea id="assistant-input" rows="2" placeholder="e.g. I want the monthly USDA feed grain outlook, focused on corn prices"
+                                  class="flex-1 px-3 py-2 border border-purple-300 rounded-lg text-sm focus:outline-none focus:border-purple-500"></textarea>
+                        <button type="button" id="assistant-send"
+                                class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm self-stretch">
+                            Send
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">
+                        The assistant reads the source name, type, URL, keywords and config exactly as
+                        they are typed in this form right now &mdash; no need to save first.
+                    </p>
                 </div>
 
                 <!-- Inline documentation panel -->
@@ -203,7 +246,14 @@
                     <p class="text-red-500 text-sm mt-1">{{ error }}</p>
                     {% endfor %}
                 {% endif %}
-                <p class="text-gray-500 text-sm mt-1">For Data sources: JSON configuration for the scraper (report URL pattern, analysis prompt, etc.)</p>
+                <div class="flex items-center justify-between mt-1">
+                    <p class="text-gray-500 text-sm">For Data sources: JSON configuration for the scraper (report URL pattern, analysis prompt, etc.)</p>
+                    <button type="button" id="config-test-btn"
+                            class="ml-3 shrink-0 px-3 py-1 text-sm border border-gray-400 rounded text-gray-700 hover:bg-gray-100">
+                        Test discovery
+                    </button>
+                </div>
+                <div id="config-test-result" class="hidden mt-2 text-sm rounded-lg border p-3"></div>
             </div>
 
             <div class="mb-6">
@@ -223,4 +273,222 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const PUB_ID = {{ publication.id }};
+    const ASSISTANT_URL = "{{ url_for('admin.source_config_assistant', pub_id=publication.id) }}";
+    const TEST_URL = "{{ url_for('admin.source_config_test', pub_id=publication.id) }}";
+
+    const logEl = document.getElementById('assistant-log');
+    const inputEl = document.getElementById('assistant-input');
+    const sendBtn = document.getElementById('assistant-send');
+    const suggestionsEl = document.getElementById('assistant-suggestions');
+    const configEl = document.getElementById('config_json');
+
+    // The transcript lives here — the server is stateless and gets it each turn.
+    const history = [];
+
+    function field(id) {
+        const el = document.getElementById(id);
+        return el ? el.value : '';
+    }
+
+    function bubble(role, text) {
+        const wrap = document.createElement('div');
+        wrap.className = role === 'user'
+            ? 'bg-white border border-purple-200 rounded-lg p-3 text-sm text-gray-800'
+            : 'bg-purple-100 border border-purple-300 rounded-lg p-3 text-sm text-gray-900';
+        const who = document.createElement('div');
+        who.className = 'text-xs font-semibold mb-1 ' + (role === 'user' ? 'text-gray-500' : 'text-purple-800');
+        who.textContent = role === 'user' ? 'You' : 'Assistant';
+        const body = document.createElement('div');
+        body.className = 'whitespace-pre-wrap';
+        body.textContent = text;
+        wrap.appendChild(who);
+        wrap.appendChild(body);
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+        return wrap;
+    }
+
+    function renderActions(container, actions) {
+        if (!actions || !actions.length) return;
+        const details = document.createElement('details');
+        details.className = 'mt-2 text-xs text-purple-800';
+        const summary = document.createElement('summary');
+        summary.className = 'cursor-pointer';
+        summary.textContent = 'Looked at ' + actions.length + ' source' + (actions.length === 1 ? '' : 's');
+        const list = document.createElement('ul');
+        list.className = 'mt-1 ml-4 list-disc break-all';
+        actions.forEach(function (a) {
+            const li = document.createElement('li');
+            li.textContent = a;
+            list.appendChild(li);
+        });
+        details.appendChild(summary);
+        details.appendChild(list);
+        container.appendChild(details);
+    }
+
+    function renderConfig(container, config) {
+        const pretty = JSON.stringify(config, null, 2);
+
+        const pre = document.createElement('pre');
+        pre.className = 'mt-2 bg-white border border-purple-300 rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre';
+        pre.textContent = pretty;
+        container.appendChild(pre);
+
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.className = 'mt-2 px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700';
+        apply.textContent = configEl.value.trim() ? 'Replace config with this' : 'Apply to config field';
+        apply.addEventListener('click', function () {
+            configEl.value = pretty;
+            apply.textContent = 'Applied ✓';
+            apply.disabled = true;
+            apply.className = 'mt-2 px-3 py-1 bg-green-600 text-white rounded text-sm';
+            configEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        container.appendChild(apply);
+    }
+
+    function send(message) {
+        if (!message.trim()) return;
+
+        bubble('user', message);
+        history.push({ role: 'user', content: message });
+        inputEl.value = '';
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Thinking...';
+        if (suggestionsEl) suggestionsEl.classList.add('hidden');
+
+        const pending = bubble('assistant', 'Looking into it…');
+
+        fetch(ASSISTANT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: history,
+                name: field('name'),
+                source_type: field('source_type'),
+                url: field('url'),
+                keywords: field('keywords'),
+                current_config: configEl.value
+            })
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+            pending.remove();
+            if (!res.ok) {
+                bubble('assistant', res.data.error || 'Something went wrong.');
+                return;
+            }
+            const reply = res.data.reply || '(no reply)';
+            const container = bubble('assistant', reply);
+            history.push({ role: 'assistant', content: reply });
+            renderActions(container, res.data.actions);
+            if (res.data.config) renderConfig(container, res.data.config);
+            logEl.scrollTop = logEl.scrollHeight;
+        })
+        .catch(function (err) {
+            pending.remove();
+            bubble('assistant', 'Request failed: ' + err);
+        })
+        .finally(function () {
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+        });
+    }
+
+    sendBtn.addEventListener('click', function () { send(inputEl.value); });
+    inputEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            send(inputEl.value);
+        }
+    });
+    document.querySelectorAll('.assistant-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () { send(chip.textContent.trim()); });
+    });
+
+    // --- Dry run: discovery only, nothing downloaded or saved ---------------
+    const testBtn = document.getElementById('config-test-btn');
+    const testResult = document.getElementById('config-test-result');
+
+    testBtn.addEventListener('click', function () {
+        testBtn.disabled = true;
+        testBtn.textContent = 'Testing…';
+        testResult.classList.remove('hidden');
+        testResult.className = 'mt-2 text-sm rounded-lg border border-gray-300 bg-gray-50 p-3';
+        testResult.textContent = 'Running discovery against the live source…';
+
+        fetch(TEST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                config: configEl.value,
+                url: field('url'),
+                name: field('name')
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            testResult.textContent = '';
+            testResult.className = data.ok
+                ? 'mt-2 text-sm rounded-lg border border-green-300 bg-green-50 p-3'
+                : 'mt-2 text-sm rounded-lg border border-red-300 bg-red-50 p-3';
+
+            const heading = document.createElement('p');
+            heading.className = 'font-semibold ' + (data.ok ? 'text-green-800' : 'text-red-800');
+            heading.textContent = data.ok
+                ? 'Found ' + data.urls.length + ' report' + (data.urls.length === 1 ? '' : 's')
+                  + (data.mode ? ' via ' + data.mode + ' mode' : '')
+                : (data.error || 'Discovery found nothing');
+            testResult.appendChild(heading);
+
+            if (data.urls && data.urls.length) {
+                const list = document.createElement('ul');
+                list.className = 'mt-1 ml-4 list-disc text-xs break-all text-gray-800';
+                data.urls.forEach(function (u) {
+                    const li = document.createElement('li');
+                    li.textContent = u.url + (u.date ? '  (' + u.date + ')' : '');
+                    list.appendChild(li);
+                });
+                testResult.appendChild(list);
+            }
+
+            if (data.log && data.log.length) {
+                const details = document.createElement('details');
+                details.className = 'mt-2 text-xs text-gray-700';
+                details.open = !data.ok;
+                const summary = document.createElement('summary');
+                summary.className = 'cursor-pointer';
+                summary.textContent = 'Scraper log (' + data.log.length + ' lines)';
+                const pre = document.createElement('pre');
+                pre.className = 'mt-1 bg-white border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap';
+                pre.textContent = data.log.join('\n');
+                details.appendChild(summary);
+                details.appendChild(pre);
+                testResult.appendChild(details);
+            }
+
+            const note = document.createElement('p');
+            note.className = 'mt-2 text-xs text-gray-500';
+            note.textContent = 'Discovery only — no PDFs were downloaded, no analysis ran, nothing was saved.';
+            testResult.appendChild(note);
+        })
+        .catch(function (err) {
+            testResult.className = 'mt-2 text-sm rounded-lg border border-red-300 bg-red-50 p-3';
+            testResult.textContent = 'Test failed: ' + err;
+        })
+        .finally(function () {
+            testBtn.disabled = false;
+            testBtn.textContent = 'Test discovery';
+        });
+    });
+})();
+</script>
 {% endblock %}

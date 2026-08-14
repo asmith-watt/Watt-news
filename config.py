@@ -57,6 +57,9 @@ class Config:
     TRIAGE_MAX_BATCH_SIZE = int(os.environ.get('TRIAGE_MAX_BATCH_SIZE', 40))
     TRIAGE_FETCH_BUDGET = int(os.environ.get('TRIAGE_FETCH_BUDGET', 5))
 
+    # Source config assistant (admin UI helper for authoring source config JSON)
+    CONFIG_ASSISTANT_MODEL = os.environ.get('CONFIG_ASSISTANT_MODEL', 'claude-opus-5')
+
     # Mailgun email notifications
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
     MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN')
