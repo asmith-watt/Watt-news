@@ -278,7 +278,6 @@
 {% block scripts %}
 <script>
 (function () {
-    const PUB_ID = {{ publication.id }};
     const ASSISTANT_URL = "{{ url_for('admin.source_config_assistant', pub_id=publication.id) }}";
     const TEST_URL = "{{ url_for('admin.source_config_test', pub_id=publication.id) }}";
 
@@ -290,6 +289,32 @@
 
     // The transcript lives here — the server is stateless and gets it each turn.
     const history = [];
+
+    // Always resolves to {ok, status, data}. A non-JSON body (login page, error
+    // page, proxy response) is reported as a status, never as a parse error.
+    function postJson(url, payload) {
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(function (r) {
+            return r.text().then(function (body) {
+                try {
+                    return { ok: r.ok, status: r.status, data: JSON.parse(body) };
+                } catch (e) {
+                    let msg = 'Server returned ' + r.status + ' ' + r.statusText +
+                              ' instead of JSON.';
+                    if (r.redirected && /\/auth\/login/.test(r.url)) {
+                        msg = 'Your session has expired — reload the page and log in again.';
+                    } else if (r.status === 404) {
+                        msg += ' The endpoint is missing — this server may be running an older deploy.';
+                    }
+                    return { ok: false, status: r.status, data: { error: msg } };
+                }
+            });
+        });
+    }
 
     function field(id) {
         const el = document.getElementById(id);
@@ -367,22 +392,19 @@
 
         const pending = bubble('assistant', 'Looking into it…');
 
-        fetch(ASSISTANT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: history,
-                name: field('name'),
-                source_type: field('source_type'),
-                url: field('url'),
-                keywords: field('keywords'),
-                current_config: configEl.value
-            })
+        postJson(ASSISTANT_URL, {
+            messages: history,
+            name: field('name'),
+            source_type: field('source_type'),
+            url: field('url'),
+            keywords: field('keywords'),
+            current_config: configEl.value
         })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .then(function (res) {
             pending.remove();
             if (!res.ok) {
+                // Drop the unanswered turn so a retry doesn't double-post it
+                history.pop();
                 bubble('assistant', res.data.error || 'Something went wrong.');
                 return;
             }
@@ -395,6 +417,7 @@
         })
         .catch(function (err) {
             pending.remove();
+            history.pop();
             bubble('assistant', 'Request failed: ' + err);
         })
         .finally(function () {
@@ -425,17 +448,18 @@
         testResult.className = 'mt-2 text-sm rounded-lg border border-gray-300 bg-gray-50 p-3';
         testResult.textContent = 'Running discovery against the live source…';
 
-        fetch(TEST_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                config: configEl.value,
-                url: field('url'),
-                name: field('name')
-            })
+        postJson(TEST_URL, {
+            config: configEl.value,
+            url: field('url'),
+            name: field('name')
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
+        .then(function (res) {
+            const data = res.data;
+            if (!res.ok && data.error && !('urls' in data)) {
+                testResult.className = 'mt-2 text-sm rounded-lg border border-red-300 bg-red-50 p-3';
+                testResult.textContent = data.error;
+                return;
+            }
             testResult.textContent = '';
             testResult.className = data.ok
                 ? 'mt-2 text-sm rounded-lg border border-green-300 bg-green-50 p-3'

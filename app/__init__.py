@@ -21,6 +21,26 @@ def create_app(config_class=Config):
     login_manager.login_view = 'auth.login'
     login_manager.login_message = 'Please log in to access this page.'
 
+    @login_manager.unauthorized_handler
+    def handle_unauthorized():
+        """Answer an expired session in the shape the caller asked for.
+
+        Redirecting to the login page is right for a browser navigation, but a
+        fetch() follows the redirect and gets HTML where it expected JSON. For
+        JSON callers return a 401 they can report; everyone else gets
+        Flask-Login's normal behaviour.
+        """
+        from flask import flash, jsonify, redirect, request
+        from flask_login import login_url
+
+        if request.is_json or request.accept_mimetypes.best == 'application/json':
+            return jsonify({
+                'error': 'Your session has expired — reload the page and log in again.'
+            }), 401
+
+        flash(login_manager.login_message, login_manager.login_message_category)
+        return redirect(login_url(login_manager.login_view, next_url=request.url))
+
     # Initialize Celery with app context
     from app.celery import make_celery
     make_celery(app)
