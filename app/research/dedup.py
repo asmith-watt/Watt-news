@@ -75,3 +75,39 @@ def is_already_content(url: str, publication_id: int) -> bool:
         NewsContent.publication_id == publication_id,
         NewsContent.source_url.ilike(f'%{normalized}%'),
     ).first() is not None
+
+
+def load_seen_hashes(publication_id: int) -> set:
+    """Load every known candidate url_hash for a publication in a single query.
+
+    Used to seed the in-run dedup set so discovery does an O(1) set lookup per
+    item instead of one indexed SELECT round-trip per item. Must cover ALL
+    candidates (not a recent window) or previously-rejected URLs would be
+    re-discovered and collide with the uq_candidate_pub_url constraint.
+    """
+    rows = (
+        CandidateArticle.query
+        .with_entities(CandidateArticle.url_hash)
+        .filter(CandidateArticle.publication_id == publication_id)
+        .all()
+    )
+    return {r[0] for r in rows if r[0]}
+
+
+def load_content_urls(publication_id: int) -> set:
+    """Load normalized source_urls of already-generated content in a single query.
+
+    Replaces the per-item ``source_url ILIKE '%url%'`` check, which could not use
+    an index (leading wildcard) and substring-matched short URLs against longer
+    ones. Comparison against this set is exact on the normalized form.
+    """
+    rows = (
+        NewsContent.query
+        .with_entities(NewsContent.source_url)
+        .filter(
+            NewsContent.publication_id == publication_id,
+            NewsContent.source_url.isnot(None),
+        )
+        .all()
+    )
+    return {normalize_url(r[0]) for r in rows if r[0]}

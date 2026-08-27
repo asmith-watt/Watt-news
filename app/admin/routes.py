@@ -12,6 +12,7 @@ from app.admin import bp
 from app.admin.forms import PublicationForm, NewsSourceForm, UserForm, NewsletterTemplateForm, AuthorProfileForm
 from app.tasks import calculate_next_run, calculate_next_candidate_run
 from app.sponsy import fetch_placements, fetch_ad_blocks
+from app.research.scrapers import _FEED_CACHE_KEY
 
 
 def admin_required(f):
@@ -277,7 +278,9 @@ def edit_news_source(pub_id, id):
     form = NewsSourceForm(obj=source)
 
     if request.method == 'GET' and source.config:
-        form.config_json.data = json.dumps(source.config, indent=2)
+        # _feed_cache is pipeline-internal bookkeeping, not user configuration.
+        visible_config = {k: v for k, v in source.config.items() if k != _FEED_CACHE_KEY}
+        form.config_json.data = json.dumps(visible_config, indent=2) if visible_config else ''
 
     if form.validate_on_submit():
         config = source.config
@@ -289,6 +292,13 @@ def edit_news_source(pub_id, id):
                 return render_template('admin/news_source_form.html', title='Edit News Source', form=form, publication=publication, source=source)
         elif not form.config_json.data or not form.config_json.data.strip():
             config = None
+
+        # Carry the hidden feed cache across an edit so saving the form doesn't
+        # force every news site to re-probe its feed paths on the next run.
+        cached_feed = (source.config or {}).get(_FEED_CACHE_KEY)
+        if cached_feed is not None:
+            config = dict(config or {})
+            config[_FEED_CACHE_KEY] = cached_feed
 
         source.name = form.name.data
         source.source_type = form.source_type.data

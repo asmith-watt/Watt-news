@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
@@ -103,6 +103,12 @@ def youtube_upload_date_token(recency_days: int) -> Optional[str]:
         if recency_days <= max_days:
             return token
     return None
+
+
+# NewsSource.config key holding the resolved feed endpoint for a news site,
+# and how long a "this site has no feed" result stays trusted before re-probing.
+_FEED_CACHE_KEY = '_feed_cache'
+_FEED_CACHE_NEGATIVE_TTL_DAYS = 7
 
 
 class BaseScraper:
@@ -251,23 +257,84 @@ class NewsSiteScraper(BaseScraper):
 
         return items
 
+    def _load_feed_cache(self, source) -> dict:
+        cache = (source.config or {}).get(_FEED_CACHE_KEY)
+        return cache if isinstance(cache, dict) else {}
+
+    def _save_feed_cache(self, source, kind: str, feed_url: Optional[str] = None):
+        """Remember which endpoint served this source so later runs skip the probe.
+
+        Safe to commit here: discovery runs before any candidate rows are staged
+        on the session, so this only flushes the source's own config.
+        """
+        from app import db
+
+        config = dict(source.config or {})
+        config[_FEED_CACHE_KEY] = {
+            'kind': kind,  # 'rss' | 'wp' | 'none'
+            'feed_url': feed_url,
+            'checked_at': datetime.utcnow().isoformat(),
+        }
+        source.config = config  # reassign so SQLAlchemy sees the JSON change
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.warning(f"Could not persist feed cache for source {source.id}: {e}")
+
+    def _feed_cache_expired(self, cache: dict) -> bool:
+        checked_at = cache.get('checked_at')
+        if not checked_at:
+            return True
+        try:
+            ts = datetime.fromisoformat(checked_at)
+        except (ValueError, TypeError):
+            return True
+        return (datetime.utcnow() - ts) > timedelta(days=_FEED_CACHE_NEGATIVE_TTL_DAYS)
+
     def _try_rss_feed(self, source) -> List[DiscoveredItem]:
-        """Probe common RSS feed paths on the site. Returns items if a feed is found."""
+        """Find the site's feed. Uses a cached endpoint before blind-probing.
+
+        Without the cache this costs up to 13 HTTP probes plus a WordPress API
+        call on every run, for every news-site source — including sites that have
+        no feed at all and will never have one.
+        """
         parsed = urlparse(source.url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-        # Try RSS/Atom feeds first
+        cache = self._load_feed_cache(source)
+        kind = cache.get('kind')
+
+        if kind == 'rss' and cache.get('feed_url'):
+            items = self._parse_rss_url(cache['feed_url'])
+            if items:
+                return items
+            logger.info(f"Cached feed {cache['feed_url']} returned nothing, re-probing {source.url}")
+        elif kind == 'wp':
+            items = self._try_wp_api(base_url)
+            if items:
+                return items
+            logger.info(f"Cached WP API for {base_url} returned nothing, re-probing")
+        elif kind == 'none' and not self._feed_cache_expired(cache):
+            # Known feedless; skip the probe until the TTL lapses so this source
+            # goes straight to the Firecrawl /map fallback.
+            logger.info(f"No feed known for {source.url} (cached), skipping probe")
+            return []
+
+        # Full probe: RSS/Atom paths, then the WordPress REST API.
         for feed_path in self._FEED_PATHS:
             feed_url = base_url + feed_path
             items = self._parse_rss_url(feed_url)
             if items:
+                self._save_feed_cache(source, 'rss', feed_url)
                 return items
 
-        # Try WordPress REST API
         wp_items = self._try_wp_api(base_url)
         if wp_items:
+            self._save_feed_cache(source, 'wp')
             return wp_items
 
+        self._save_feed_cache(source, 'none')
         return []
 
     def _parse_rss_url(self, feed_url) -> List[DiscoveredItem]:

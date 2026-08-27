@@ -293,7 +293,10 @@ def research_publication_sources(self, publication_id):
     deduplicate, triage via LLM, score, enrich, and store them.
     """
     from app.research.scrapers import get_scraper
-    from app.research.dedup import url_hash, is_duplicate_candidate, is_already_content, sanitize_url
+    from app.research.dedup import (
+        url_hash, normalize_url, is_duplicate_candidate, sanitize_url,
+        load_seen_hashes, load_content_urls,
+    )
     from app.research.scoring import score_candidate, compute_recency_score
     from app.research.enrichment import enrich_item, _extract_date_from_url
     from app.research.triage import triage_items, TRIAGE_MULTIPLIERS, _SKIP_TRIAGE_SOURCE_TYPES
@@ -349,7 +352,17 @@ def research_publication_sources(self, publication_id):
     # ── Phase 1: Discover + Dedup ──────────────────────────────────
     # Collect all non-duplicate items across all sources before triage.
     pending_items = []  # list of (DiscoveredItem, source, url_hash) tuples
-    seen_hashes = set()  # in-memory dedup within this run
+
+    # Dedup state is loaded up front in two queries rather than queried per item.
+    # seen_hashes covers both previously-stored candidates and URLs already seen
+    # earlier in this run; content_urls covers articles generated via paths that
+    # never created a candidate row (e.g. the Submit URL workflow).
+    seen_hashes = load_seen_hashes(publication_id)
+    content_urls = load_content_urls(publication_id)
+    logger.info(
+        f"Dedup state loaded for pub {publication_id}: "
+        f"{len(seen_hashes)} known candidate hashes, {len(content_urls)} content URLs"
+    )
 
     for source in sources:
         scraper = get_scraper(source.source_type)
@@ -374,16 +387,13 @@ def research_publication_sources(self, publication_id):
                 item.url = sanitize_url(item.url)
                 hash_val = url_hash(item.url)
 
-                # In-memory dedup: skip if another source already found this URL
+                # Dedup: already stored as a candidate, or already found earlier
+                # in this run by another source.
                 if hash_val in seen_hashes:
                     stats['skipped_duplicates'] += 1
                     continue
 
-                if is_duplicate_candidate(hash_val, publication_id):
-                    stats['skipped_duplicates'] += 1
-                    continue
-
-                if is_already_content(item.url, publication_id):
+                if normalize_url(item.url) in content_urls:
                     stats['skipped_duplicates'] += 1
                     continue
 
