@@ -172,6 +172,13 @@
                                     class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
                                 Edit
                             </button>
+                            {% if version.is_final %}
+                            <button onclick="toggleRevisePanel({{ version.id }})"
+                                    id="revise-btn-{{ version.id }}"
+                                    class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
+                                Revise with AI
+                            </button>
+                            {% endif %}
                             {% if version.id != content.selected_version_id %}
                             <button onclick="setSelectedVersion({{ version.id }})"
                                     class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
@@ -223,6 +230,51 @@
                             </button>
                         </div>
                     </div>
+
+                    {% if version.is_final %}
+                    <!-- AI revision panel (FINAL versions only) -->
+                    <div id="revise-panel-{{ version.id }}" class="hidden mb-4 p-4 bg-purple-50 border border-purple-200 rounded">
+                        <div id="revise-form-{{ version.id }}">
+                            <label for="revise-instructions-{{ version.id }}" class="block font-bold text-gray-700 mb-1">What should change?</label>
+                            <p class="text-xs text-gray-500 mb-2">Describe the edits in plain language. Everything you don't mention is left as written. You'll see a preview before anything is saved.</p>
+                            <textarea id="revise-instructions-{{ version.id }}" rows="4" maxlength="4000"
+                                placeholder="e.g. Tighten the first two paragraphs, cut the quote from the USDA spokesperson, and make the deck mention soybeans."
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+                            <div class="mt-2 flex justify-end space-x-2">
+                                <button onclick="toggleRevisePanel({{ version.id }})"
+                                        class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                                    Cancel
+                                </button>
+                                <button onclick="requestRevision({{ version.id }})"
+                                        id="revise-submit-{{ version.id }}"
+                                        class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
+                                    Generate revision
+                                </button>
+                            </div>
+                        </div>
+                        <div id="revise-status-{{ version.id }}" class="hidden text-sm"></div>
+                        <div id="revise-preview-{{ version.id }}" class="hidden">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="font-bold text-gray-700">Revision preview</h3>
+                                <div class="flex space-x-2">
+                                    <button onclick="discardRevision({{ version.id }})"
+                                            class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                                        Discard
+                                    </button>
+                                    <button onclick="applyRevision({{ version.id }})"
+                                            id="revise-apply-{{ version.id }}"
+                                            class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
+                                        Apply to this version
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-600 mb-1"><span class="font-medium">You asked:</span> <span id="revise-asked-{{ version.id }}"></span></p>
+                            <div id="revise-summary-{{ version.id }}" class="mb-3 p-3 bg-white border border-purple-100 rounded text-sm text-gray-700 whitespace-pre-wrap"></div>
+                            <div id="revise-fields-{{ version.id }}" class="space-y-3"></div>
+                            <p class="mt-3 text-xs text-gray-500">Applied revisions haven't been through the audit. Re-run the audit if the changes are substantial.</p>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- Deck -->
                     <div class="mb-4" id="deck-block-{{ version.id }}" {% if not version.deck %}style="display:none"{% endif %}>
@@ -1230,11 +1282,168 @@ function saveVersion(versionId) {
     });
 }
 
+// --- AI revisions (FINAL versions) ---
+const REVISION_FIELD_LABELS = {deck: 'Deck', teaser: 'Teaser', summary: 'Summary', content: 'Content', notes: 'AI Notes'};
+const activeRevisions = {};  // versionId -> revision id
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : text;
+    return div.innerHTML;
+}
+
+function toggleRevisePanel(versionId) {
+    const panel = document.getElementById('revise-panel-' + versionId);
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden') && !activeRevisions[versionId]) {
+        document.getElementById('revise-instructions-' + versionId).focus();
+    }
+}
+
+function showRevisionState(versionId, state, message) {
+    const form = document.getElementById('revise-form-' + versionId);
+    const status = document.getElementById('revise-status-' + versionId);
+    const preview = document.getElementById('revise-preview-' + versionId);
+    form.classList.toggle('hidden', state !== 'form');
+    preview.classList.toggle('hidden', state !== 'preview');
+    status.classList.toggle('hidden', !message);
+    status.innerHTML = message || '';
+}
+
+function requestRevision(versionId) {
+    const instructions = document.getElementById('revise-instructions-' + versionId).value.trim();
+    if (!instructions) return;
+
+    const btn = document.getElementById('revise-submit-' + versionId);
+    btn.disabled = true;
+
+    fetch('/content/{{ content.id }}/version/' + versionId + '/revise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructions: instructions })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.error) {
+            showRevisionState(versionId, 'form', '<span class="text-red-700">' + escapeHtml(data.error) + '</span>');
+            return;
+        }
+        activeRevisions[versionId] = data.revision.id;
+        pollRevision(versionId, data.revision.id);
+    })
+    .catch(error => {
+        btn.disabled = false;
+        showRevisionState(versionId, 'form', '<span class="text-red-700">Error: ' + escapeHtml(String(error)) + '</span>');
+    });
+}
+
+function pollRevision(versionId, revisionId) {
+    showRevisionState(versionId, 'working',
+        '<span class="text-purple-800">Revising the article... This usually takes under a minute.</span>');
+
+    let attempts = 0;
+    let timer = null;
+    const check = () => {
+        attempts++;
+        if (attempts > 200) {
+            clearInterval(timer);
+            showRevisionState(versionId, 'form', '<span class="text-red-700">The revision is taking too long. Try again.</span>');
+            return;
+        }
+        fetch('/content/{{ content.id }}/revision/' + revisionId)
+            .then(response => response.json())
+            .then(rev => {
+                if (rev.status === 'pending' || rev.status === 'running') return;
+                clearInterval(timer);
+                if (rev.status === 'completed') {
+                    renderRevisionPreview(versionId, rev);
+                } else {
+                    delete activeRevisions[versionId];
+                    showRevisionState(versionId, 'form',
+                        '<span class="text-red-700">Revision failed: ' + escapeHtml(rev.message || rev.status) + '</span>');
+                }
+            });
+    };
+    check();
+    timer = setInterval(check, 3000);
+}
+
+function renderRevisionPreview(versionId, rev) {
+    document.getElementById('revise-asked-' + versionId).textContent = rev.instructions;
+    document.getElementById('revise-summary-' + versionId).textContent = rev.change_summary || 'No summary returned.';
+
+    const container = document.getElementById('revise-fields-' + versionId);
+    container.innerHTML = '';
+    let changed = 0;
+    Object.keys(REVISION_FIELD_LABELS).forEach(field => {
+        const before = (rev.original || {})[field] || '';
+        const after = (rev.revised || {})[field] || '';
+        if (before === after) return;
+        changed++;
+        const block = document.createElement('div');
+        block.innerHTML =
+            '<h4 class="font-semibold text-gray-700 text-sm mb-1">' + REVISION_FIELD_LABELS[field] + '</h4>' +
+            '<div class="grid grid-cols-1 md:grid-cols-2 gap-2">' +
+            '<div><div class="text-xs text-gray-500 mb-1">Before</div>' +
+            '<pre class="p-2 bg-white border border-gray-200 rounded text-xs whitespace-pre-wrap max-h-96 overflow-y-auto">' + escapeHtml(before) + '</pre></div>' +
+            '<div><div class="text-xs text-gray-500 mb-1">After</div>' +
+            '<pre class="p-2 bg-white border border-purple-300 rounded text-xs whitespace-pre-wrap max-h-96 overflow-y-auto">' + escapeHtml(after) + '</pre></div>' +
+            '</div>';
+        container.appendChild(block);
+    });
+    if (!changed) {
+        container.innerHTML = '<p class="text-sm text-gray-600">No fields were changed.</p>';
+    }
+    document.getElementById('revise-apply-' + versionId).disabled = !changed;
+    document.getElementById('revise-panel-' + versionId).classList.remove('hidden');
+    showRevisionState(versionId, 'preview');
+}
+
+function applyRevision(versionId) {
+    const btn = document.getElementById('revise-apply-' + versionId);
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+    fetch('/content/{{ content.id }}/revision/' + activeRevisions[versionId] + '/apply', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+                btn.disabled = false;
+                btn.textContent = 'Apply to this version';
+            }
+        });
+}
+
+function discardRevision(versionId) {
+    fetch('/content/{{ content.id }}/revision/' + activeRevisions[versionId] + '/discard', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            delete activeRevisions[versionId];
+            showRevisionState(versionId, 'form');
+        });
+}
+
 // Load audit data when page loads
 document.addEventListener('DOMContentLoaded', function() {
     {% if content.versions|length > 0 %}
     loadAuditData();
     {% endif %}
+    // Pick up a revision that was still generating, or awaiting review, before a reload
+    {% for version in content.versions if version.is_final %}
+    {% set open_revs = version.revisions|selectattr('status', 'in', ['pending', 'running', 'completed'])|sort(attribute='id')|list %}
+    {% if open_revs %}
+    activeRevisions[{{ version.id }}] = {{ open_revs[-1].id }};
+    document.getElementById('revise-panel-{{ version.id }}').classList.remove('hidden');
+    pollRevision({{ version.id }}, {{ open_revs[-1].id }});
+    {% endif %}
+    {% endfor %}
 });
 </script>
 {% endblock %}

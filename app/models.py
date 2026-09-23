@@ -452,6 +452,40 @@ class PatchedVersion(db.Model):
     version = db.relationship('ContentVersion', backref='patched_versions')
 
 
+class VersionRevision(db.Model):
+    """An editor's free-text revision request applied to a FINAL version by Claude.
+
+    The revised fields are held here as a preview until the editor applies them.
+    `original` snapshots the version's fields when the request was made, so apply
+    can refuse if the version was edited in the meantime, and so the pre-revision
+    text is never lost.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    content_id = db.Column(db.Integer, db.ForeignKey('news_content.id'), nullable=False, index=True)
+    version_id = db.Column(db.Integer, db.ForeignKey('content_version.id'), nullable=False, index=True)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+    instructions = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(32), default='pending', index=True)  # pending, running, completed, failed, applied, discarded
+    message = db.Column(db.Text)  # error detail when status == 'failed'
+    ai_model = db.Column(db.String(64))
+
+    original = db.Column(db.JSON)  # version fields at request time
+    revised = db.Column(db.JSON)   # full set of revised fields
+    change_summary = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+    applied_at = db.Column(db.DateTime)
+
+    news_content = db.relationship('NewsContent', backref='revisions')
+    version = db.relationship('ContentVersion', backref='revisions')
+    requested_by = db.relationship('User')
+
+    def __repr__(self):
+        return f'<VersionRevision {self.id} v={self.version_id} ({self.status})>'
+
+
 class CandidateArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)

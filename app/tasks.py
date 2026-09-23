@@ -10,7 +10,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from app.celery import celery
 from app import db
-from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing, AuthorProfile, SourceAudit
+from app.models import Publication, WorkflowRun, CandidateArticle, NewsSource, ResearchLog, WeeklyBriefing, AuthorProfile, SourceAudit, VersionRevision
 
 logger = logging.getLogger(__name__)
 
@@ -1099,3 +1099,52 @@ def _build_audit_summary(findings, health, coverage_score, coverage_summary):
     if coverage_summary:
         parts.append(coverage_summary.strip())
     return ' '.join(parts)
+
+
+@celery.task(name='app.tasks.revise_content_version', time_limit=600, soft_time_limit=540)
+def revise_content_version(revision_id):
+    """Generate a revision preview for a FINAL version from an editor's instructions.
+
+    Works from the `original` snapshot taken when the request was made, and only
+    stores the result on the VersionRevision; applying it is a separate step.
+    """
+    from app.content_revision import generate_revision
+
+    revision = VersionRevision.query.get(revision_id)
+    if not revision:
+        logger.error(f"Version revision {revision_id} not found")
+        return {'error': 'revision not found'}
+
+    revision.status = 'running'
+    db.session.commit()
+
+    content = revision.news_content
+    publication = content.publication
+    default_author = AuthorProfile.query.filter_by(
+        publication_id=publication.id, is_default=True, is_active=True
+    ).first()
+    style_guide = default_author.style_guide if default_author else None
+
+    try:
+        revised, change_summary, model = generate_revision(
+            publication, content.title, revision.original, revision.instructions, style_guide
+        )
+        # The editor may have discarded it while Claude was working
+        db.session.refresh(revision)
+        if revision.status == 'discarded':
+            return {'status': 'discarded'}
+        revision.revised = revised
+        revision.change_summary = change_summary
+        revision.ai_model = model
+        revision.status = 'completed'
+    except SoftTimeLimitExceeded:
+        revision.status = 'failed'
+        revision.message = 'Timed out generating the revision'
+    except Exception as e:
+        logger.error(f"Version revision {revision_id} failed: {e}", exc_info=True)
+        revision.status = 'failed'
+        revision.message = str(e)
+
+    revision.completed_at = datetime.utcnow()
+    db.session.commit()
+    return {'status': revision.status}

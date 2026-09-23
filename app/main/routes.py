@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import uuid
 from app import db
-from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource, ContentRecipe, StaticSource
+from app.models import NewsContent, Publication, WorkflowRun, ContentVersion, VersionAudit, PatchedVersion, VersionRevision, CandidateArticle, WeeklyBriefing, AuthorProfile, NewsSource, ContentRecipe, StaticSource
 from app.main import bp
 from app.publication_context import resolve_publication_id
 import requests
@@ -449,6 +449,122 @@ def edit_version(id, version_id):
 
     db.session.commit()
     return jsonify({'success': True, 'updated': updated})
+
+
+def _revision_json(revision):
+    return {
+        'id': revision.id,
+        'version_id': revision.version_id,
+        'status': revision.status,
+        'message': revision.message,
+        'instructions': revision.instructions,
+        'original': revision.original,
+        'revised': revision.revised,
+        'change_summary': revision.change_summary,
+    }
+
+
+def _get_revision_for_content(id, revision_id):
+    """Load a content + revision pair, or return (None, error response)."""
+    content = NewsContent.query.get_or_404(id)
+    revision = VersionRevision.query.get_or_404(revision_id)
+    if revision.content_id != content.id:
+        return None, (jsonify({'error': 'Revision does not belong to this content'}), 400)
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return None, (jsonify({'error': 'Access denied'}), 403)
+    return revision, None
+
+
+@bp.route('/content/<int:id>/version/<int:version_id>/revise', methods=['POST'])
+@login_required
+def revise_version(id, version_id):
+    """Start an AI revision of a FINAL version from the editor's instructions."""
+    from app.content_revision import MAX_INSTRUCTIONS_CHARS, snapshot_version
+
+    content = NewsContent.query.get_or_404(id)
+    version = ContentVersion.query.get_or_404(version_id)
+
+    if version.content_id != content.id:
+        return jsonify({'error': 'Version does not belong to this content'}), 400
+
+    if not current_user.has_role('admin') and not current_user.has_publication_access(content.publication_id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    if not version.is_final:
+        return jsonify({'error': 'Only the audited FINAL version can be revised with AI'}), 400
+
+    instructions = ((request.json or {}).get('instructions') or '').strip()
+    if not instructions:
+        return jsonify({'error': 'Tell the editor bot what to change'}), 400
+    if len(instructions) > MAX_INSTRUCTIONS_CHARS:
+        return jsonify({'error': f'Instructions are limited to {MAX_INSTRUCTIONS_CHARS} characters'}), 400
+
+    revision = VersionRevision(
+        content_id=content.id,
+        version_id=version.id,
+        requested_by_id=current_user.id,
+        instructions=instructions,
+        status='pending',
+        original=snapshot_version(version),
+    )
+    db.session.add(revision)
+    db.session.commit()
+
+    from app.tasks import revise_content_version
+    revise_content_version.delay(revision.id)
+
+    return jsonify({'success': True, 'revision': _revision_json(revision)})
+
+
+@bp.route('/content/<int:id>/revision/<int:revision_id>')
+@login_required
+def revision_status(id, revision_id):
+    revision, error = _get_revision_for_content(id, revision_id)
+    if error:
+        return error
+    return jsonify(_revision_json(revision))
+
+
+@bp.route('/content/<int:id>/revision/<int:revision_id>/apply', methods=['POST'])
+@login_required
+def apply_revision(id, revision_id):
+    """Write a completed revision's fields onto its version."""
+    from app.content_revision import REVISABLE_FIELDS, snapshot_version
+
+    revision, error = _get_revision_for_content(id, revision_id)
+    if error:
+        return error
+
+    if revision.status != 'completed':
+        return jsonify({'error': f"This revision is {revision.status} and can't be applied"}), 400
+
+    version = revision.version
+    if snapshot_version(version) != revision.original:
+        return jsonify({'error': 'This version was edited after the revision was requested. '
+                                 'Discard it and request a new revision.'}), 409
+
+    for field in REVISABLE_FIELDS:
+        setattr(version, field, revision.revised.get(field, ''))
+    revision.status = 'applied'
+    revision.applied_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({'success': True})
+
+
+@bp.route('/content/<int:id>/revision/<int:revision_id>/discard', methods=['POST'])
+@login_required
+def discard_revision(id, revision_id):
+    revision, error = _get_revision_for_content(id, revision_id)
+    if error:
+        return error
+
+    if revision.status == 'applied':
+        return jsonify({'error': 'This revision has already been applied'}), 400
+
+    revision.status = 'discarded'
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @bp.route('/content/<int:id>/status', methods=['POST'])

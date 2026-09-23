@@ -63,6 +63,9 @@ class Config:
     # Data source report analysis (PDF -> story angles); per-source claude_model overrides
     DATA_SCRAPER_MODEL = os.environ.get('DATA_SCRAPER_MODEL', 'claude-opus-5')
 
+    # Editor-requested AI revisions of FINAL article versions
+    REVISION_MODEL = os.environ.get('REVISION_MODEL', 'claude-opus-5')
+
     # Mailgun email notifications
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
     MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN')
