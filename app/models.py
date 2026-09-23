@@ -415,7 +415,8 @@ class VersionAudit(db.Model):
     # Audit metadata
     ai_provider = db.Column(db.String(32))
     ai_model = db.Column(db.String(64))
-    overall_risk = db.Column(db.String(32))  # 'low', 'medium', 'high'
+    overall_risk = db.Column(db.String(32))  # 'low', 'low-medium', 'medium', 'medium-high', 'high'
+    risk_summary = db.Column(db.Text)  # the audit bot's explanation of the risk, when it sends one
     original_draft = db.Column(db.Text)  # Original text that was audited
 
     # Issues found (JSON array)

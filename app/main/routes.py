@@ -1076,6 +1076,7 @@ def get_audit_data(id):
                 'ai_provider': va.ai_provider,
                 'ai_model': va.ai_model,
                 'overall_risk': va.overall_risk,
+                'risk_summary': va.risk_summary,
                 'original_draft': va.original_draft,
                 'issues': va.issues,
                 'created_at': va.created_at.isoformat() if va.created_at else None

@@ -1,3 +1,5 @@
+import re
+
 from flask import request, jsonify, current_app, g
 from functools import wraps
 from datetime import datetime, timedelta
@@ -702,6 +704,30 @@ def complete_audit_workflow(workflow_id):
         return jsonify({'error': f'Failed to process audit result: {str(e)}'}), 500
 
 
+_RISK_LEVEL_RE = re.compile(r'^\s*(low|medium|high)(?:\s*(?:-|/|to)\s*(low|medium|high))?\b', re.IGNORECASE)
+
+
+def _split_overall_risk(raw):
+    """Split the audit bot's overall_risk into (level, summary).
+
+    The bot is asked for 'low'/'medium'/'high' but sometimes sends a sentence
+    such as "Medium-high: the core event is supported, but ...". The leading
+    level goes in overall_risk (which drives the UI badge) and the full text is
+    kept as the summary. A bare level returns no summary.
+    """
+    if not raw:
+        return None, None
+    text = str(raw).strip()
+    match = _RISK_LEVEL_RE.match(text)
+    if not match:
+        return None, text
+    level = match.group(1).lower()
+    if match.group(2) and match.group(2).lower() != level:
+        level = f"{level}-{match.group(2).lower()}"
+    remainder = text[match.end():].strip(' :-—–.')
+    return level, (text if remainder else None)
+
+
 @bp.route('/version-audit', methods=['POST'])
 @require_api_key
 def create_version_audit():
@@ -784,6 +810,8 @@ def create_version_audit():
     if version.content_id != article_id:
         return jsonify({'error': 'Version does not belong to this article'}), 400
 
+    overall_risk, risk_summary = _split_overall_risk(data.get('overall_risk'))
+
     try:
         version_audit = VersionAudit(
             workflow_run_id=data.get('workflow_id'),
@@ -791,7 +819,8 @@ def create_version_audit():
             version_id=version_id,
             ai_provider=data.get('ai_provider'),
             ai_model=data.get('ai_model'),
-            overall_risk=data.get('overall_risk'),
+            overall_risk=overall_risk,
+            risk_summary=risk_summary,
             original_draft=data.get('original_draft_input'),
             issues=issues
         )
