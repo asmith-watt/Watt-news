@@ -60,6 +60,9 @@ class Config:
     # Source config assistant (admin UI helper for authoring source config JSON)
     CONFIG_ASSISTANT_MODEL = os.environ.get('CONFIG_ASSISTANT_MODEL', 'claude-opus-5')
 
+    # Data source report analysis (PDF -> story angles); per-source claude_model overrides
+    DATA_SCRAPER_MODEL = os.environ.get('DATA_SCRAPER_MODEL', 'claude-opus-5')
+
     # Mailgun email notifications
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
     MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN')

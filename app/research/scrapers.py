@@ -999,7 +999,7 @@ class DataScraper(BaseScraper):
         import anthropic
 
         max_angles = config.get('max_angles', 5)
-        model = config.get('claude_model', 'claude-sonnet-4-20250514')
+        model = config.get('claude_model') or current_app.config.get('DATA_SCRAPER_MODEL', 'claude-opus-5')
         analysis_prompt = config['analysis_prompt']
 
         # Include previous report data for month-over-month context
@@ -1045,11 +1045,14 @@ class DataScraper(BaseScraper):
             client = anthropic.Anthropic(api_key=api_key)
             response = client.messages.create(
                 model=model,
-                max_tokens=4096,
+                max_tokens=16000,
                 messages=[{'role': 'user', 'content': user_message}],
             )
 
-            response_text = response.content[0].text.strip()
+            # Thinking blocks may precede the answer, so take the text block
+            response_text = next(
+                (b.text for b in response.content if b.type == 'text'), ''
+            ).strip()
             # Strip markdown code fencing if present
             if response_text.startswith('```'):
                 lines = response_text.split('\n')

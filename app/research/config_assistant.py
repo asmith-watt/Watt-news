@@ -68,7 +68,7 @@ Only dicts and lists are traversed; there is no wildcard or index selector.
 Optional in any mode:
 - lookback_months (int, default 2): how many past months to check
 - max_angles (int, default 5): max story angles Claude returns per report
-- claude_model (string, default "claude-sonnet-4-20250514")
+- claude_model (string, optional; omit to use the app default model)
 
 Never include previous_report_data — the scraper writes that itself after each run.
 
