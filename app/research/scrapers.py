@@ -723,6 +723,57 @@ class CompetitorScraper(NewsSiteScraper):
         return items
 
 
+_DATA_POINT_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'metric': {'type': 'string'},
+        'value': {'type': 'string'},
+        'previous': {'type': 'string'},
+        'change': {'type': 'string'},
+    },
+    'required': ['metric', 'value', 'previous', 'change'],
+    'additionalProperties': False,
+}
+
+_DATA_ANALYSIS_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'report_summary': {'type': 'string'},
+        'key_figures': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {'metric': {'type': 'string'}, 'value': {'type': 'string'}},
+                'required': ['metric', 'value'],
+                'additionalProperties': False,
+            },
+        },
+        'story_angles': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'headline': {'type': 'string'},
+                    'summary': {'type': 'string'},
+                    'commodity': {'type': 'string'},
+                    'data_points': {'type': 'array', 'items': _DATA_POINT_SCHEMA},
+                    'significance': {'type': 'string', 'enum': ['high', 'medium', 'low']},
+                    'angle_type': {
+                        'type': 'string',
+                        'enum': ['supply_shift', 'demand_change', 'price_impact', 'trade_flow',
+                                 'policy_change', 'weather_impact', 'other'],
+                    },
+                },
+                'required': ['headline', 'summary', 'commodity', 'data_points', 'significance', 'angle_type'],
+                'additionalProperties': False,
+            },
+        },
+    },
+    'required': ['report_summary', 'key_figures', 'story_angles'],
+    'additionalProperties': False,
+}
+
+
 class DataScraper(BaseScraper):
     """Scrape government PDF reports, extract text, and use Claude to identify story angles."""
 
@@ -744,8 +795,15 @@ class DataScraper(BaseScraper):
             logger.info(f"DataScraper: no report URLs discovered for source '{source.name}'")
             return []
 
+        # Oldest first, so previous_report_data ends up holding the newest report
+        report_urls.sort(key=lambda r: r.get('date') or '')
+        analyzed = set(config.get('analyzed_report_urls') or [])
+
         all_items = []
         for report_info in report_urls:
+            if report_info['url'] in analyzed:
+                logger.info(f"DataScraper: already analysed {report_info['url']}, skipping")
+                continue
             try:
                 pdf_bytes = self._download_pdf(report_info['url'])
                 if not pdf_bytes:
@@ -769,7 +827,7 @@ class DataScraper(BaseScraper):
                 )
                 all_items.extend(items)
 
-                self._update_previous_report_data(source, analysis, report_info.get('date'))
+                self._update_previous_report_data(source, analysis, report_info.get('date'), report_info['url'])
 
             except Exception as e:
                 logger.error(f"DataScraper: error processing {report_info['url']}: {e}", exc_info=True)
@@ -989,6 +1047,9 @@ class DataScraper(BaseScraper):
                     page_text = page.extract_text()
                     if page_text:
                         text_parts.append(page_text)
+
+                    # pdfplumber caches every parsed object per page; free it
+                    page.close()
         except Exception as e:
             logger.error(f"DataScraper: pdfplumber extraction failed: {e}")
             return ''
@@ -1023,21 +1084,10 @@ class DataScraper(BaseScraper):
             f"{previous_context}\n\n"
             f"## Document Text\n\n{text}\n\n"
             f"## Response Instructions\n\n"
-            f"Respond with valid JSON only (no markdown fencing). Use this exact structure:\n"
-            f'{{\n'
-            f'  "report_summary": "Brief 2-3 sentence overview of the report",\n'
-            f'  "key_figures": {{"metric_name": "value", ...}},\n'
-            f'  "story_angles": [\n'
-            f'    {{\n'
-            f'      "headline": "Compelling news headline",\n'
-            f'      "summary": "2-3 paragraph summary suitable for an article",\n'
-            f'      "commodity": "relevant commodity or sector",\n'
-            f'      "data_points": [{{"metric": "...", "value": "...", "previous": "...", "change": "..."}}],\n'
-            f'      "significance": "high|medium|low",\n'
-            f'      "angle_type": "supply_shift|demand_change|price_impact|trade_flow|policy_change|weather_impact|other"\n'
-            f'    }}\n'
-            f'  ]\n'
-            f'}}\n\n'
+            f"report_summary: brief 2-3 sentence overview of the report.\n"
+            f"key_figures: the report's headline metrics.\n"
+            f"story_angles: each with a compelling news headline, a 2-3 paragraph summary "
+            f"suitable for an article, the relevant commodity or sector, and supporting data points.\n"
             f'Return up to {max_angles} story angles, ordered by significance.'
         )
 
@@ -1047,20 +1097,22 @@ class DataScraper(BaseScraper):
                 model=model,
                 max_tokens=16000,
                 messages=[{'role': 'user', 'content': user_message}],
+                # Schema-constrained output, so quotes in the text can't break the JSON
+                output_config={'format': {'type': 'json_schema', 'schema': _DATA_ANALYSIS_SCHEMA}},
             )
+            if response.stop_reason != 'end_turn':
+                logger.error(f"DataScraper: Claude stopped early ({response.stop_reason})")
+                return None
 
             # Thinking blocks may precede the answer, so take the text block
             response_text = next(
                 (b.text for b in response.content if b.type == 'text'), ''
-            ).strip()
-            # Strip markdown code fencing if present
-            if response_text.startswith('```'):
-                lines = response_text.split('\n')
-                # Remove first line (```json or ```) and last line (```)
-                lines = [l for l in lines if not l.strip().startswith('```')]
-                response_text = '\n'.join(lines)
-
+            )
             analysis = json.loads(response_text)
+            # The schema needs fixed keys, so key_figures comes back as a list; keep the dict shape
+            analysis['key_figures'] = {
+                f['metric']: f['value'] for f in analysis.get('key_figures', [])
+            }
             return analysis
 
         except json.JSONDecodeError as e:
@@ -1118,7 +1170,7 @@ class DataScraper(BaseScraper):
 
         return items
 
-    def _update_previous_report_data(self, source, analysis: dict, report_date: Optional[str]):
+    def _update_previous_report_data(self, source, analysis: dict, report_date: Optional[str], pdf_url: str):
         try:
             from app import db
 
@@ -1132,6 +1184,9 @@ class DataScraper(BaseScraper):
                 'report_summary': analysis.get('report_summary'),
                 'key_figures': analysis.get('key_figures', {}),
             }
+            # Remember analysed reports so later runs don't pay to re-analyse them
+            analyzed = [u for u in updated_config.get('analyzed_report_urls') or [] if u != pdf_url]
+            updated_config['analyzed_report_urls'] = (analyzed + [pdf_url])[-24:]
             source.config = updated_config
             db.session.commit()
         except Exception as e:

@@ -82,8 +82,30 @@ def _promote_rss_content(metadata: dict) -> dict:
 _youtube_blocked = False  # circuit breaker: skip after first IP ban
 
 
+def reset_youtube_block():
+    """Re-arm transcript fetching at the start of each research run."""
+    global _youtube_blocked
+    _youtube_blocked = False
+
+
+def _youtube_transcript_api():
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api.proxies import WebshareProxyConfig
+
+    # YouTube blocks most cloud IPs (Heroku included); a residential proxy gets around it
+    username = current_app.config.get('WEBSHARE_PROXY_USERNAME')
+    password = current_app.config.get('WEBSHARE_PROXY_PASSWORD')
+    if username and password:
+        return YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
+            proxy_username=username, proxy_password=password,
+        ))
+    return YouTubeTranscriptApi()
+
+
 def _enrich_youtube_video(url: str, metadata: dict) -> dict:
     """Fetch YouTube transcript using youtube-transcript-api."""
+    from youtube_transcript_api import RequestBlocked
+
     global _youtube_blocked
     if _youtube_blocked:
         metadata['enrichment_failed'] = True
@@ -97,10 +119,7 @@ def _enrich_youtube_video(url: str, metadata: dict) -> dict:
         return metadata
 
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-
-        ytt_api = YouTubeTranscriptApi()
-        transcript = ytt_api.fetch(video_id)
+        transcript = _youtube_transcript_api().fetch(video_id)
 
         # Combine transcript snippets into plain text
         lines = [snippet.text for snippet in transcript.snippets]
@@ -114,15 +133,17 @@ def _enrich_youtube_video(url: str, metadata: dict) -> dict:
         metadata['enrichment_failed'] = False
         metadata['enrichment_error'] = None
 
-    except Exception as e:
-        error_str = str(e)
-        logger.warning(f"YouTube transcript fetch failed for {video_id}: {e}")
+    except RequestBlocked:
+        # Covers IpBlocked too. No point retrying other videos this run.
+        _youtube_blocked = True
+        logger.warning(f"YouTube blocked transcript request for {video_id}; skipping remaining transcripts this run")
         metadata['enrichment_failed'] = True
-        metadata['enrichment_error'] = error_str
-        # Trip circuit breaker on IP bans — no point retrying other videos
-        if 'blocking' in error_str.lower() or 'ip' in error_str.lower():
-            _youtube_blocked = True
-            logger.info("YouTube IP block detected, skipping remaining transcripts this run")
+        metadata['enrichment_error'] = 'YouTube transcript blocked (IP blocked)'
+    except Exception as e:
+        # e.g. transcripts disabled or none available for this one video
+        logger.warning(f"YouTube transcript fetch failed for {video_id}: {type(e).__name__}")
+        metadata['enrichment_failed'] = True
+        metadata['enrichment_error'] = f'YouTube transcript unavailable ({type(e).__name__})'
 
     return metadata
 

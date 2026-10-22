@@ -25,6 +25,9 @@ class Config:
     # Research / Scraping
     FIRECRAWL_API_KEY = os.environ.get('FIRECRAWL_API_KEY')
     SERPAPI_API_KEY = os.environ.get('SERPAPI_API_KEY')
+    # Optional residential proxy for YouTube transcripts (YouTube blocks Heroku IPs)
+    WEBSHARE_PROXY_USERNAME = os.environ.get('WEBSHARE_PROXY_USERNAME')
+    WEBSHARE_PROXY_PASSWORD = os.environ.get('WEBSHARE_PROXY_PASSWORD')
     ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 
     # Discovery max-age filter: drop candidates whose published date is older

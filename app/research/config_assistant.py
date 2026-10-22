@@ -70,7 +70,7 @@ Optional in any mode:
 - max_angles (int, default 5): max story angles Claude returns per report
 - claude_model (string, optional; omit to use the app default model)
 
-Never include previous_report_data — the scraper writes that itself after each run.
+Never include previous_report_data or analyzed_report_urls — the scraper writes those itself after each run.
 
 ## How discovery actually behaves (be honest with the editor about this)
 - url_pattern: sends a HEAD request per month in the lookback window and only

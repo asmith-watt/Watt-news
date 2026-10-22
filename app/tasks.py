@@ -298,12 +298,14 @@ def research_publication_sources(self, publication_id):
         load_seen_hashes, load_content_urls,
     )
     from app.research.scoring import score_candidate, compute_recency_score
-    from app.research.enrichment import enrich_item, _extract_date_from_url
+    from app.research.enrichment import enrich_item, _extract_date_from_url, reset_youtube_block
     from app.research.triage import triage_items, TRIAGE_MULTIPLIERS, _SKIP_TRIAGE_SOURCE_TYPES
 
     publication = Publication.query.get(publication_id)
     if not publication or not publication.is_active:
         return {'error': f'Publication {publication_id} not found or inactive'}
+
+    reset_youtube_block()
 
     sources = NewsSource.query.filter_by(
         publication_id=publication_id, is_active=True
@@ -691,7 +693,9 @@ def retriage_source_candidates(source_id):
     from app.research.scrapers import DiscoveredItem
     from app.research.triage import triage_items, TRIAGE_MULTIPLIERS
     from app.research.scoring import score_candidate
-    from app.research.enrichment import enrich_item
+    from app.research.enrichment import enrich_item, reset_youtube_block
+
+    reset_youtube_block()
 
     source = NewsSource.query.get(source_id)
     if not source:
@@ -747,7 +751,8 @@ def retriage_source_candidates(source_id):
         new_verdict = verdict_info.get('verdict', 'not_news')
         reasoning = verdict_info.get('reasoning', '')
 
-        meta = candidate.extra_metadata or {}
+        # Copy so SQLAlchemy sees the JSON column change
+        meta = dict(candidate.extra_metadata or {})
         meta['retriage_verdict'] = new_verdict
         meta['retriage_reasoning'] = reasoning
         meta['retriage_previous_verdict'] = meta.get('triage_verdict', 'not_news')
@@ -766,21 +771,19 @@ def retriage_source_candidates(source_id):
             multiplier = TRIAGE_MULTIPLIERS.get(new_verdict, 1.0)
             scores['relevance_score'] = round(scores['relevance_score'] * multiplier, 2)
 
-            # Enrich if above threshold and budget allows
-            if scores['relevance_score'] >= enrichment_min_score and enrichments_used < enrichment_budget:
-                try:
-                    item = DiscoveredItem(
-                        url=candidate.url,
-                        title=candidate.title,
-                        snippet=candidate.snippet,
-                        metadata=meta,
-                    )
-                    enriched_meta, is_free = enrich_item(item, source.source_type or '')
-                    meta.update(enriched_meta)
-                    if not is_free:
-                        enrichments_used += 1
-                except Exception as e:
-                    logger.warning(f"Re-triage enrichment failed for {candidate.url}: {e}")
+            # Enrich if above threshold and budget allows; RSS and YouTube are free, only Firecrawl costs budget
+            is_free_enrichment = (
+                'rss_full_content' in meta
+                or source.source_type == 'YouTube Keywords'
+            )
+            if (
+                scores['relevance_score'] >= enrichment_min_score
+                and source.source_type != 'Data'
+                and (is_free_enrichment or enrichments_used < enrichment_budget)
+            ):
+                enrich_item(candidate.url, meta, source.source_type or '', source_url=source.url)
+                if not is_free_enrichment:
+                    enrichments_used += 1
 
             candidate.status = 'new'
             candidate.relevance_score = scores['relevance_score']
