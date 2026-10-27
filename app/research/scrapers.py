@@ -1,8 +1,11 @@
 """Source-type-specific scraping strategies for candidate article discovery."""
-import io
 import json
 import logging
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -14,6 +17,8 @@ import requests
 from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+_PDF_TEXT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pdf_text.py')
 
 
 @dataclass
@@ -778,6 +783,8 @@ class DataScraper(BaseScraper):
     """Scrape government PDF reports, extract text, and use Claude to identify story angles."""
 
     REQUIRED_CONFIG_FIELDS = {'discovery_mode', 'document_type', 'report_name', 'publisher', 'cadence', 'analysis_prompt'}
+    # Text sent to Claude is capped here, so extraction stops once it has this much
+    MAX_TEXT_CHARS = 150000
 
     def scrape(self, source) -> List[DiscoveredItem]:
         config = source.config
@@ -805,11 +812,7 @@ class DataScraper(BaseScraper):
                 logger.info(f"DataScraper: already analysed {report_info['url']}, skipping")
                 continue
             try:
-                pdf_bytes = self._download_pdf(report_info['url'])
-                if not pdf_bytes:
-                    continue
-
-                text = self._extract_text(pdf_bytes)
+                text = self._download_and_extract_text(report_info['url'])
                 if not text or len(text.strip()) < 100:
                     logger.warning(f"DataScraper: insufficient text extracted from {report_info['url']}")
                     continue
@@ -1019,42 +1022,37 @@ class DataScraper(BaseScraper):
 
         return urls
 
-    def _download_pdf(self, url: str) -> Optional[bytes]:
-        try:
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-            return resp.content
-        except requests.RequestException as e:
-            logger.error(f"DataScraper: failed to download PDF {url}: {e}")
-            return None
+    def _download_and_extract_text(self, url: str) -> str:
+        """Download a PDF to a temp file and extract its text in a subprocess.
 
-    def _extract_text(self, pdf_bytes: bytes) -> str:
-        import pdfplumber
+        Extraction runs out of process because pdfplumber can add hundreds of MB
+        to the worker that are never returned (see pdf_text.py).
+        """
+        with tempfile.NamedTemporaryFile(suffix='.pdf') as tmp:
+            try:
+                with requests.get(url, timeout=60, stream=True) as resp:
+                    resp.raise_for_status()
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        tmp.write(chunk)
+                tmp.flush()
+            except requests.RequestException as e:
+                logger.error(f"DataScraper: failed to download PDF {url}: {e}")
+                return ''
 
-        text_parts = []
-        try:
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
-                    # Extract tables first
-                    tables = page.extract_tables()
-                    for table in tables:
-                        for row in table:
-                            if row:
-                                cells = [str(cell) if cell else '' for cell in row]
-                                text_parts.append(' | '.join(cells))
+            try:
+                result = subprocess.run(
+                    [sys.executable, '-I', _PDF_TEXT_SCRIPT, tmp.name, str(self.MAX_TEXT_CHARS)],
+                    capture_output=True, timeout=300,
+                )
+            except subprocess.TimeoutExpired:
+                logger.error(f"DataScraper: pdfplumber extraction timed out for {url}")
+                return ''
 
-                    # Extract remaining text
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_parts.append(page_text)
-
-                    # pdfplumber caches every parsed object per page; free it
-                    page.close()
-        except Exception as e:
-            logger.error(f"DataScraper: pdfplumber extraction failed: {e}")
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8', errors='replace').strip()
+            logger.error(f"DataScraper: pdfplumber extraction failed for {url}: {stderr[-500:]}")
             return ''
-
-        return '\n\n'.join(text_parts)
+        return result.stdout.decode('utf-8', errors='replace')
 
     def _analyze_with_claude(self, text: str, config: dict, api_key: str) -> Optional[dict]:
         import anthropic
@@ -1075,9 +1073,8 @@ class DataScraper(BaseScraper):
             )
 
         # Truncate text to stay within reasonable token limits
-        max_chars = 150000
-        if len(text) > max_chars:
-            text = text[:max_chars] + "\n\n[... document truncated ...]"
+        if len(text) > self.MAX_TEXT_CHARS:
+            text = text[:self.MAX_TEXT_CHARS] + "\n\n[... document truncated ...]"
 
         user_message = (
             f"{analysis_prompt}\n"
