@@ -110,6 +110,36 @@ def youtube_upload_date_token(recency_days: int) -> Optional[str]:
     return None
 
 
+# Source types whose scrapers make one paid SerpAPI search per keyword.
+SERPAPI_SOURCE_TYPES = ('Keyword Search', 'YouTube Keywords')
+
+
+def parse_keyword_terms(keywords: Optional[str]) -> List[str]:
+    """Split a keywords field (one term per line and/or comma-separated) into
+    unique terms, preserving order and dropping case-insensitive duplicates."""
+    terms = []
+    seen = set()
+    for t in re.split(r'[,\n\r]+', keywords or ''):
+        t = t.strip()
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            terms.append(t)
+    return terms
+
+
+def claim_unsearched_terms(terms: List[str], engine: str,
+                           searched_terms: Optional[set]) -> List[str]:
+    """Drop terms already searched on `engine` earlier in this research run and
+    record the rest as searched. Each SerpAPI search is billed, and sources often
+    share terms, so a term is only searched once per run. With no run-level set
+    (e.g. a one-off scrape) every term is returned."""
+    if searched_terms is None:
+        return terms
+    fresh = [t for t in terms if (engine, t.lower()) not in searched_terms]
+    searched_terms.update((engine, t.lower()) for t in fresh)
+    return fresh
+
+
 # NewsSource.config key holding the resolved feed endpoint for a news site,
 # and how long a "this site has no feed" result stays trusted before re-probing.
 _FEED_CACHE_KEY = '_feed_cache'
@@ -523,7 +553,7 @@ class NewsSiteScraper(BaseScraper):
 class KeywordSearchScraper(BaseScraper):
     """Use SerpAPI Google News to find articles by keyword."""
 
-    def scrape(self, source) -> List[DiscoveredItem]:
+    def scrape(self, source, searched_terms: Optional[set] = None) -> List[DiscoveredItem]:
         keywords = source.keywords
         if not keywords:
             logger.info(f"KeywordSearchScraper: source {source.id} ('{source.name}') has no keywords, skipping")
@@ -534,21 +564,22 @@ class KeywordSearchScraper(BaseScraper):
             logger.warning("SERPAPI_API_KEY not configured, skipping KeywordSearchScraper")
             return []
 
-        # The keywords field holds one term/phrase per line and/or comma-separated.
         # Google News matches a single coherent query, so run one search per keyword
         # rather than sending the whole blob (which returns zero results).
-        terms = [t.strip() for t in re.split(r'[,\n\r]+', keywords) if t.strip()]
-        # Preserve order, drop duplicates
-        seen_terms = set()
-        unique_terms = []
-        for t in terms:
-            key = t.lower()
-            if key not in seen_terms:
-                seen_terms.add(key)
-                unique_terms.append(t)
+        unique_terms = parse_keyword_terms(keywords)
 
         if not unique_terms:
             logger.info(f"KeywordSearchScraper: source {source.id} keywords parsed to zero terms, skipping")
+            return []
+
+        parsed_count = len(unique_terms)
+        unique_terms = claim_unsearched_terms(unique_terms, 'google_news', searched_terms)
+        if len(unique_terms) < parsed_count:
+            logger.info(
+                f"KeywordSearchScraper: source {source.id} ('{source.name}') skipping "
+                f"{parsed_count - len(unique_terms)} keywords already searched this run"
+            )
+        if not unique_terms:
             return []
 
         try:
@@ -614,7 +645,7 @@ class KeywordSearchScraper(BaseScraper):
 class YouTubeSearchScraper(BaseScraper):
     """Use SerpAPI YouTube engine to find videos by keyword."""
 
-    def scrape(self, source) -> List[DiscoveredItem]:
+    def scrape(self, source, searched_terms: Optional[set] = None) -> List[DiscoveredItem]:
         keywords = source.keywords
         if not keywords:
             logger.info(f"YouTubeSearchScraper: source {source.id} ('{source.name}') has no keywords, skipping")
@@ -625,21 +656,22 @@ class YouTubeSearchScraper(BaseScraper):
             logger.warning("SERPAPI_API_KEY not configured, skipping YouTubeSearchScraper")
             return []
 
-        # One term/phrase per line and/or comma-separated. YouTube search matches a
-        # single coherent query, so run one search per keyword rather than sending the
-        # whole blob (which returns nothing).
-        terms = [t.strip() for t in re.split(r'[,\n\r]+', keywords) if t.strip()]
-        # Preserve order, drop duplicates
-        seen_terms = set()
-        unique_terms = []
-        for t in terms:
-            key = t.lower()
-            if key not in seen_terms:
-                seen_terms.add(key)
-                unique_terms.append(t)
+        # YouTube search matches a single coherent query, so run one search per
+        # keyword rather than sending the whole blob (which returns nothing).
+        unique_terms = parse_keyword_terms(keywords)
 
         if not unique_terms:
             logger.info(f"YouTubeSearchScraper: source {source.id} keywords parsed to zero terms, skipping")
+            return []
+
+        parsed_count = len(unique_terms)
+        unique_terms = claim_unsearched_terms(unique_terms, 'youtube', searched_terms)
+        if len(unique_terms) < parsed_count:
+            logger.info(
+                f"YouTubeSearchScraper: source {source.id} ('{source.name}') skipping "
+                f"{parsed_count - len(unique_terms)} keywords already searched this run"
+            )
+        if not unique_terms:
             return []
 
         try:

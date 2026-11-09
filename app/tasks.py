@@ -292,7 +292,7 @@ def research_publication_sources(self, publication_id):
     Scan all active sources for a publication, discover candidate articles,
     deduplicate, triage via LLM, score, enrich, and store them.
     """
-    from app.research.scrapers import get_scraper
+    from app.research.scrapers import get_scraper, SERPAPI_SOURCE_TYPES
     from app.research.dedup import (
         url_hash, normalize_url, is_duplicate_candidate, sanitize_url,
         load_seen_hashes, load_content_urls,
@@ -366,6 +366,10 @@ def research_publication_sources(self, publication_id):
         f"{len(seen_hashes)} known candidate hashes, {len(content_urls)} content URLs"
     )
 
+    # (engine, term) pairs already sent to SerpAPI this run, shared across sources
+    # so overlapping keyword lists don't pay for the same search twice.
+    serpapi_searched = set()
+
     for source in sources:
         scraper = get_scraper(source.source_type)
         if not scraper:
@@ -373,7 +377,10 @@ def research_publication_sources(self, publication_id):
             continue
 
         try:
-            items = scraper.scrape(source)
+            if source.source_type in SERPAPI_SOURCE_TYPES:
+                items = scraper.scrape(source, searched_terms=serpapi_searched)
+            else:
+                items = scraper.scrape(source)
             stats['sources_scanned'] += 1
             stats['total_discovered'] += len(items)
         except Exception as e:
