@@ -166,7 +166,7 @@ class BaseScraper:
         for attempt in range(max_retries):
             try:
                 resp = requests.post(
-                    f'https://api.firecrawl.dev/v1/{endpoint}',
+                    f'https://api.firecrawl.dev/v2/{endpoint}',
                     headers=self._firecrawl_headers(),
                     json=payload,
                     timeout=timeout,
@@ -526,6 +526,7 @@ class NewsSiteScraper(BaseScraper):
             return []
 
         items = []
+        # v2 returns {url, title, description} objects; v1 returned bare strings
         for link_data in data.get('links', []):
             if isinstance(link_data, str):
                 items.append(DiscoveredItem(url=link_data))
@@ -538,7 +539,8 @@ class NewsSiteScraper(BaseScraper):
         return [i for i in items if i.url]
 
     def _scrape_links_fallback(self, source) -> List[DiscoveredItem]:
-        data = self._firecrawl_request('scrape', {'url': source.url, 'formats': ['links']})
+        # maxAge 0: v2 otherwise serves a cached copy up to 2 days old, hiding new articles
+        data = self._firecrawl_request('scrape', {'url': source.url, 'formats': ['links'], 'maxAge': 0})
         if data is None:
             logger.error(f"Firecrawl /scrape fallback failed for {source.url}")
             return []
@@ -949,7 +951,10 @@ class DataScraper(BaseScraper):
             logger.warning("FIRECRAWL_API_KEY not configured, cannot scrape landing page for PDFs")
             return []
 
-        data = self._firecrawl_request('scrape', {'url': landing_url, 'formats': ['links']}, timeout=30)
+        # maxAge 0: v2 otherwise serves a cached copy up to 2 days old, hiding new reports
+        data = self._firecrawl_request(
+            'scrape', {'url': landing_url, 'formats': ['links'], 'maxAge': 0}, timeout=30
+        )
         if data is None:
             logger.error(f"DataScraper: Firecrawl scrape failed for {landing_url}")
             return []

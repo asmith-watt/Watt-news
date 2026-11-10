@@ -245,7 +245,7 @@ def _tool_fetch_page(url):
     api_key = current_app.config.get('FIRECRAWL_API_KEY')
     if api_key:
         data = DataScraper()._firecrawl_request(
-            'scrape', {'url': url, 'formats': ['markdown', 'links']}, timeout=45
+            'scrape', {'url': url, 'formats': ['markdown', 'links'], 'maxAge': 0}, timeout=45
         )
         if data is not None:
             payload = data.get('data', {})

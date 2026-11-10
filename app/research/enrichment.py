@@ -302,7 +302,7 @@ def _firecrawl_scrape(url: str, api_key: str) -> Optional[dict]:
         _firecrawl_rate_limit()
         try:
             resp = requests.post(
-                'https://api.firecrawl.dev/v1/scrape',
+                'https://api.firecrawl.dev/v2/scrape',
                 headers=headers,
                 json=payload,
                 timeout=60,
