@@ -68,6 +68,33 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+    @staticmethod
+    def _reset_serializer():
+        from itsdangerous import URLSafeTimedSerializer
+        from flask import current_app
+        return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt='password-reset')
+
+    def _reset_fingerprint(self):
+        # the tail of the current hash: setting a new password re-salts it, so a
+        # used link stops working without anything stored in the database
+        return (self.password_hash or '')[-16:]
+
+    def get_reset_password_token(self):
+        return self._reset_serializer().dumps([self.id, self._reset_fingerprint()])
+
+    @staticmethod
+    def verify_reset_password_token(token, max_age=3600):
+        """The user a reset token was issued to, or None if it is no good."""
+        from itsdangerous import BadSignature, SignatureExpired
+        try:
+            user_id, fingerprint = User._reset_serializer().loads(token, max_age=max_age)
+        except (BadSignature, SignatureExpired, ValueError, TypeError):
+            return None
+        user = db.session.get(User, user_id)
+        if user is None or not user.is_active or user._reset_fingerprint() != fingerprint:
+            return None
+        return user
+
     def has_role(self, role_name):
         return any(role.name == role_name for role in self.roles)
 

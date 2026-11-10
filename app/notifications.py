@@ -2,11 +2,56 @@
 import logging
 import re
 from datetime import datetime
+from html import escape
 
 import requests
 from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+
+def send_email(to, subject, text, html=None):
+    """Send one email through Mailgun. Returns True if Mailgun accepted it.
+
+    With no Mailgun key configured (dev) the message is printed instead, so a
+    reset link can still be followed locally.
+    """
+    api_key = current_app.config.get('MAILGUN_API_KEY')
+    domain = current_app.config.get('MAILGUN_DOMAIN')
+    from_addr = current_app.config.get('MAILGUN_FROM', 'WATT Automation <noreply@mg.example.com>')
+
+    if not api_key or not domain:
+        print(f'--- email from {from_addr} to {to}: {subject} ---\n{text}\n---')
+        return False
+
+    data = {'from': from_addr, 'to': [to], 'subject': subject, 'text': text}
+    if html:
+        # multipart: the text part stays the fallback for a client that wants it
+        data['html'] = html
+    resp = requests.post(
+        f'https://api.mailgun.net/v3/{domain}/messages',
+        auth=('api', api_key), data=data, timeout=10)
+    resp.raise_for_status()
+    return True
+
+
+def send_password_reset_email(user, reset_url):
+    text = (
+        f'Hello {user.username},\n\n'
+        'Someone asked to reset the password for your WATT Automation account. '
+        'If that was you, set a new password here:\n\n'
+        f'{reset_url}\n\n'
+        'The link expires in 1 hour and works once. If you did not ask for this, '
+        'you can ignore this email — your password will not change.\n'
+    )
+    html = f"""<!doctype html><html><body style="margin:0;padding:0;">
+<div style="font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1c2024;max-width:620px;">
+<p style="margin:0 0 14px;">Hello {escape(user.username)},</p>
+<p style="margin:0 0 14px;">Someone asked to reset the password for your WATT Automation account. If that was you, set a new password here:</p>
+<p style="margin:0 0 14px;"><a href="{escape(reset_url)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Reset password</a></p>
+<p style="margin:0 0 14px;color:#6b7280;font-size:13px;">The link expires in 1 hour and works once. If you did not ask for this, you can ignore this email — your password will not change.</p>
+</div></body></html>"""
+    return send_email(user.email, '[WATT] Reset your password', text, html=html)
 
 
 def send_job_notification(publication, job_type, stats, errors=None):
