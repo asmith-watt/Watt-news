@@ -16,6 +16,12 @@ def make_celery(app):
         enable_utc=True,
         task_track_started=True,
         task_time_limit=30 * 60,  # 30 minutes max per task
+        # Heroku Redis Mini allows 20 connections across web, worker and clock.
+        # Nothing reads task results, so don't open backend connections to
+        # store them, and keep each process's broker connection pool small.
+        task_ignore_result=True,
+        broker_pool_limit=2,
+        redis_max_connections=4,
     )
 
     # Configure beat schedule for periodic tasks
