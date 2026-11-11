@@ -13,6 +13,8 @@ Werkzeug==3.0.1
 gunicorn==21.2.0
 Markdown==3.5.1
 celery[redis]==5.3.6
+# kombu 5.7 requires redis-py 6.1+; pin until redis is upgraded with it
+kombu==5.6.2
 redis==5.0.1
 feedparser==6.0.11
 google-search-results==2.4.2
