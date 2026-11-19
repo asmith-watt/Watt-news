@@ -82,9 +82,18 @@ Never include previous_report_data or analyzed_report_urls — the scraper write
   in api_url. Reports older than lookback_months are skipped when
   date_json_path is set.
 
+## House Content
+House Content sources discover nothing; they switch on the triage check that
+rejects candidates the publication already covered. The URL should be the
+publication's own website. Optional config keys:
+- lookback_days (int, default 14): how far back to compare published articles.
+- include_sister_sites (bool, default true): also flag stories that sister
+  sites in the same CMS namespace already ran (flagged, not rejected).
+- mindful_namespace (string, default "watt/default"): Mindful CMS namespace.
+
 ## Other source types
-Only the Data source type reads this config. For RSS Feed, News Site, Keyword
-Search, YouTube Keywords, House Content, and Competitor sources the config
+Only the Data and House Content source types read this config. For RSS Feed,
+News Site, Keyword Search, YouTube Keywords, and Competitor sources the config
 field is ignored entirely — the URL and Keywords fields drive those. If the
 editor is configuring one of those, say so plainly and don't invent a config.
 """

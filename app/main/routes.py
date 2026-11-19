@@ -1466,6 +1466,7 @@ def candidate_detail(id):
         'discovered_at': candidate.discovered_at.isoformat() if candidate.discovered_at else None,
         'triage_verdict': metadata.get('triage_verdict'),
         'triage_reasoning': metadata.get('triage_reasoning'),
+        'house_coverage': metadata.get('house_coverage'),
         'content_source': metadata.get('content_source'),
         'content_length': metadata.get('content_length'),
         'content_format': metadata.get('content_format'),

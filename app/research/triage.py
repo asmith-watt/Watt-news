@@ -16,7 +16,7 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 # Source types that skip triage (already curated or always relevant)
-_SKIP_TRIAGE_SOURCE_TYPES = {'Data', 'House Content'}
+_SKIP_TRIAGE_SOURCE_TYPES = {'Data'}
 
 # Claude tool definition for page fetching
 _FETCH_PAGE_TOOL = {
@@ -39,10 +39,17 @@ TRIAGE_MULTIPLIERS = {
     'relevant_news': 1.15,
     'maybe': 1.0,
     'not_news': 0.0,
+    'already_covered': 0.0,
 }
 
+# Verdicts that save the candidate as rejected and skip scoring/enrichment.
+REJECT_VERDICTS = {'not_news', 'already_covered'}
 
-def triage_items(items, source_types, industry_description, reader_personas):
+_COVERAGE_VALUES = {'same_story', 'follow_up'}
+
+
+def triage_items(items, source_types, industry_description, reader_personas,
+                 house_index=None):
     """Classify a list of discovered items using Claude.
 
     Parameters
@@ -55,12 +62,19 @@ def triage_items(items, source_types, industry_description, reader_personas):
         Publication's industry description for context.
     reader_personas : str
         Publication's reader personas for context.
+    house_index : list[dict], optional
+        Recently published house articles from
+        ``app.research.house_content.build_house_index``. When given, each
+        item is also checked against it.
 
     Returns
     -------
     list[dict]
-        One dict per input item: {url, verdict, reasoning}.
-        verdict is 'relevant_news', 'maybe', or 'not_news'.
+        One dict per input item: {url, verdict, reasoning, published_date,
+        house_coverage}. verdict is 'relevant_news', 'maybe', 'not_news', or
+        'already_covered' (same story already run on the publication's own
+        site). house_coverage is None or a dict describing the matching house
+        article and how it relates (see ``_apply_coverage``).
     """
     if not items:
         return []
@@ -92,6 +106,7 @@ def triage_items(items, source_types, industry_description, reader_personas):
             api_key,
             model,
             remaining_fetch_budget,
+            house_index or [],
         )
         results.extend(batch_results)
         total_fetches += fetches
@@ -105,7 +120,7 @@ def triage_items(items, source_types, industry_description, reader_personas):
 
 
 def _triage_batch(items, source_types, industry_description, reader_personas,
-                  api_key, model, fetch_budget):
+                  api_key, model, fetch_budget, house_index):
     """Triage a single batch via one Claude API call.
 
     Returns (list[dict], int) — verdicts and number of page fetches used.
@@ -117,7 +132,7 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
         for item in items
     ]
 
-    system_prompt = _build_system_prompt(industry_description, reader_personas)
+    system_prompt = _build_system_prompt(industry_description, reader_personas, house_index)
     user_message = _build_user_message(items, source_types)
 
     try:
@@ -129,7 +144,7 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
         for _ in range(fetch_budget + 2):  # +2: initial call + final no-tools call
             response = client.messages.create(
                 model=model,
-                max_tokens=4096,
+                max_tokens=8192,
                 system=system_prompt,
                 messages=messages,
                 tools=[_FETCH_PAGE_TOOL],
@@ -158,7 +173,7 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
                 continue
 
             # Final response — extract text and parse
-            return _parse_response(response, items), fetches_used
+            return _parse_response(response, items, house_index), fetches_used
 
         # Loop exhausted (Claude kept requesting tools). Make one final call
         # without tools to force a JSON response.
@@ -177,11 +192,11 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
             messages.append({'role': 'user', 'content': tool_results})
         response = client.messages.create(
             model=model,
-            max_tokens=4096,
+            max_tokens=8192,
             system=system_prompt,
             messages=messages,
         )
-        return _parse_response(response, items), fetches_used
+        return _parse_response(response, items, house_index), fetches_used
 
     except anthropic.RateLimitError:
         logger.warning("Triage API rate limited, retrying once after 10s")
@@ -190,12 +205,12 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
             client = anthropic.Anthropic(api_key=api_key)
             response = client.messages.create(
                 model=model,
-                max_tokens=4096,
+                max_tokens=8192,
                 system=system_prompt,
                 messages=[{'role': 'user', 'content': user_message}],
                 tools=[_FETCH_PAGE_TOOL],
             )
-            return _parse_response(response, items), 0
+            return _parse_response(response, items, house_index), 0
         except Exception as e:
             logger.error(f"Triage retry failed: {e}")
             return fallback, 0
@@ -205,9 +220,13 @@ def _triage_batch(items, source_types, industry_description, reader_personas,
         return fallback, 0
 
 
-def _build_system_prompt(industry_description, reader_personas):
-    """Build the system prompt for the triage agent."""
-    return (
+def _build_system_prompt(industry_description, reader_personas, house_index=None):
+    """Build the system prompt for the triage agent.
+
+    Returned as a list of system blocks. With a house index the prompt is
+    identical for every batch in a run, so it is marked for prompt caching.
+    """
+    text = (
         "You are a news triage agent for a trade publication. Your job is to classify "
         "discovered URLs as relevant news articles or not, and to extract publish dates.\n\n"
         f"## Publication Industry\n{industry_description or 'Not specified'}\n\n"
@@ -233,6 +252,32 @@ def _build_system_prompt(industry_description, reader_personas):
         "- Each object must have: index (int), verdict (string), reasoning (brief string), published_date (string YYYY-MM-DD or null).\n"
         "- Output ONLY the JSON array, no markdown fencing or extra text."
     )
+    if not house_index:
+        return [{'type': 'text', 'text': text}]
+
+    from app.research.house_content import format_house_index
+    text += (
+        "\n\n## Already Published (house coverage)\n"
+        "These articles were published recently by this publication (OWN) or by a "
+        "sister publication in the same media group (SISTER), newest first. "
+        "Drafts not yet live are also listed as OWN.\n"
+        f"{format_house_index(house_index)}\n\n"
+        "## Coverage Check\n"
+        "For each item, decide whether one of the articles above already covers it:\n"
+        "- **same_story**: the house article reports the same news event or announcement "
+        "(same company/agency action, same report, same deal), even if worded differently "
+        "or from a different outlet's angle.\n"
+        "- **follow_up**: the item is a genuinely new development on a story the house "
+        "article covered (a deal closing after it was announced, a final rule after a "
+        "proposal, new figures, a reaction or consequence). This is still worth writing.\n"
+        "- Sharing a topic, company, or commodity is NOT enough. Only match when it is "
+        "the same story or a direct continuation of it.\n"
+        "Add two fields to each object: covered_by (the house article id such as \"H3\", "
+        "or null) and coverage (\"same_story\", \"follow_up\", or null). Keep verdict as "
+        "your news classification; the coverage fields are judged separately. When you set "
+        "covered_by, start reasoning with which house article matched and why."
+    )
+    return [{'type': 'text', 'text': text, 'cache_control': {'type': 'ephemeral'}}]
 
 
 def _build_user_message(items, source_types):
@@ -250,7 +295,7 @@ def _build_user_message(items, source_types):
     return json.dumps(payload, indent=None)
 
 
-def _parse_response(response, items):
+def _parse_response(response, items, house_index=None):
     """Parse Claude's response into verdict dicts."""
     fallback = [
         {'url': item.url, 'verdict': 'maybe', 'reasoning': 'parse fallback'}
@@ -328,14 +373,57 @@ def _parse_response(response, items):
             except (ValueError, TypeError):
                 pass
 
+        verdict, house_coverage = _apply_coverage(verdict, v, house_index)
+
         results.append({
             'url': item.url,
             'verdict': verdict,
             'reasoning': v.get('reasoning', 'no reasoning provided'),
             'published_date': published_date,
+            'house_coverage': house_coverage,
         })
 
     return results
+
+
+def _apply_coverage(verdict, raw, house_index):
+    """Turn the model's coverage fields into a final verdict and a flag.
+
+    - Same story on the publication's own site (or an unpublished draft here)
+      -> verdict 'already_covered', which is saved as rejected.
+    - Same story on a sister site, or a follow-up to any house article -> the
+      verdict stands and the candidate carries a house_coverage flag so the
+      editor can see the related article.
+
+    Returns (verdict, house_coverage dict or None).
+    """
+    if not house_index or verdict == 'not_news':
+        return verdict, None
+
+    coverage = raw.get('coverage')
+    covered_by = raw.get('covered_by')
+    if coverage not in _COVERAGE_VALUES or not isinstance(covered_by, str):
+        return verdict, None
+
+    match = next((h for h in house_index if h['id'] == covered_by.strip()), None)
+    if not match:
+        return verdict, None
+
+    if coverage == 'same_story':
+        relation = 'same_story_own' if match['scope'] == 'own' else 'same_story_sister'
+    else:
+        relation = 'follow_up'
+
+    house_coverage = {
+        'relation': relation,
+        'title': match['title'],
+        'url': match['url'],
+        'site': match['site'],
+        'published': match['published'],
+    }
+    if relation == 'same_story_own':
+        verdict = 'already_covered'
+    return verdict, house_coverage
 
 
 def _fetch_page_for_triage(url: str) -> str:

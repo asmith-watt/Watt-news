@@ -152,6 +152,18 @@
                         </p>
                         {% endif %}
                     {% endif %}
+                    {% set hc = item.extra_metadata.get('house_coverage') if item.extra_metadata else None %}
+                    {% if hc %}
+                    <p class="text-xs mt-1 max-w-md {% if hc.relation == 'follow_up' %}text-indigo-700{% else %}text-amber-700{% endif %}">
+                        <span class="font-medium">
+                            {% if hc.relation == 'same_story_own' %}Already covered
+                            {% elif hc.relation == 'same_story_sister' %}Sister site ran this ({{ hc.site|replace('www.', '') }})
+                            {% else %}Follow-up to{% endif %}:
+                        </span>
+                        {% if hc.url %}<a href="{{ hc.url }}" target="_blank" rel="noopener" class="underline">{{ hc.title }}</a>{% else %}{{ hc.title }} <span class="text-gray-400">({{ hc.site }})</span>{% endif %}
+                        {% if hc.published %}<span class="text-gray-400">· {{ hc.published }}</span>{% endif %}
+                    </p>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-4 text-sm text-gray-500">
                     {{ item.news_source.name if item.news_source else 'N/A' }}
@@ -284,6 +296,12 @@ function buildDetailHtml(d) {
         relevant_news: 'bg-green-100 text-green-800',
         maybe: 'bg-yellow-100 text-yellow-800',
         not_news: 'bg-red-100 text-red-800',
+        already_covered: 'bg-amber-100 text-amber-800',
+    };
+    const coverageLabels = {
+        same_story_own: 'Already covered on this site',
+        same_story_sister: 'Same story ran on a sister site',
+        follow_up: 'Follow-up to an earlier house article',
     };
 
     let html = '';
@@ -311,6 +329,20 @@ function buildDetailHtml(d) {
         if (d.triage_reasoning && d.triage_reasoning !== rejectionText) {
             html += `<p class="text-sm text-gray-600 mt-2">${esc(d.triage_reasoning)}</p>`;
         }
+        html += `</div>`;
+    }
+
+    // House coverage (matching article this site or a sister site already ran)
+    const hc = d.house_coverage;
+    if (hc) {
+        html += `<div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">`;
+        html += `<div class="text-xs font-medium text-amber-700 uppercase mb-1">${esc(coverageLabels[hc.relation] || 'House coverage')}</div>`;
+        if (hc.url) {
+            html += `<a href="${esc(hc.url)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">${esc(hc.title)}</a>`;
+        } else {
+            html += `<p class="text-sm text-gray-800">${esc(hc.title)}</p>`;
+        }
+        html += `<p class="text-xs text-gray-500 mt-1">${esc(hc.site || '')}${hc.published ? ' · ' + esc(hc.published) : ''}</p>`;
         html += `</div>`;
     }
 

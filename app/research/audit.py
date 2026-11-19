@@ -701,13 +701,25 @@ def _check_source_type(source):
         ))
         return findings
 
-    if stype in (SourceType.COMPETITOR.value, SourceType.HOUSE_CONTENT.value):
+    if stype == SourceType.COMPETITOR.value:
         findings.append(_finding(
             'type_non_discovering', SEVERITY_INFO, CATEGORY_CONFIG,
             f'"{stype}" sources do not discover content',
             f'{stype} sources have no scraper; they are used only to shape '
             'domain exclusion during research. This is expected, not a fault.',
             'No action needed unless you expected this source to bring in articles.',
+            source=source,
+        ))
+    elif stype == SourceType.HOUSE_CONTENT.value:
+        findings.append(_finding(
+            'type_non_discovering', SEVERITY_INFO, CATEGORY_CONFIG,
+            f'"{stype}" sources do not discover content',
+            'House Content sources bring in no candidates. During triage, '
+            'candidates are compared against what this site (and its sister '
+            'sites) published recently in the CMS, and stories already run '
+            'here are rejected as already_covered. This is expected, not a fault.',
+            'Make sure the URL is the publication\'s own website so its articles '
+            'are recognised as its own rather than a sister site\'s.',
             source=source,
         ))
 

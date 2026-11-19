@@ -299,7 +299,10 @@ def research_publication_sources(self, publication_id):
     )
     from app.research.scoring import score_candidate, compute_recency_score
     from app.research.enrichment import enrich_item, _extract_date_from_url, reset_youtube_block
-    from app.research.triage import triage_items, TRIAGE_MULTIPLIERS, _SKIP_TRIAGE_SOURCE_TYPES
+    from app.research.triage import (
+        triage_items, TRIAGE_MULTIPLIERS, REJECT_VERDICTS, _SKIP_TRIAGE_SOURCE_TYPES,
+    )
+    from app.research.house_content import build_house_index
 
     publication = Publication.query.get(publication_id)
     if not publication or not publication.is_active:
@@ -347,6 +350,9 @@ def research_publication_sources(self, publication_id):
         'triage_relevant': 0,
         'triage_maybe': 0,
         'triage_rejected': 0,
+        'triage_already_covered': 0,
+        'triage_house_flagged': 0,
+        'house_index_size': 0,
         'triage_skipped': 0,
         'errors': 0,
     }
@@ -458,11 +464,23 @@ def research_publication_sources(self, publication_id):
                 triage_source_types.append(source.source_type)
 
         if triage_items_list:
+            # What we (and sister sites) already published, so triage can
+            # reject stories we've run. Empty without a House Content source.
+            try:
+                house_index = build_house_index(publication, sources)
+            except Exception as e:
+                logger.error(f"House index build failed for pub {publication_id}: {e}", exc_info=True)
+                _research_log(publication_id, 'triage', 'warning',
+                              f"House content check skipped: {e}")
+                house_index = []
+            stats['house_index_size'] = len(house_index)
+
             verdicts = triage_items(
                 items=[item for item, _, _ in triage_items_list],
                 source_types=triage_source_types,
                 industry_description=publication.industry_description or '',
                 reader_personas=publication.reader_personas or '',
+                house_index=house_index,
             )
             for v in verdicts:
                 verdict_map[v['url']] = v
@@ -472,6 +490,10 @@ def research_publication_sources(self, publication_id):
                     stats['triage_maybe'] += 1
                 elif v['verdict'] == 'not_news':
                     stats['triage_rejected'] += 1
+                elif v['verdict'] == 'already_covered':
+                    stats['triage_already_covered'] += 1
+                if v.get('house_coverage') and v['verdict'] != 'already_covered':
+                    stats['triage_house_flagged'] += 1
 
     # ── Phase 3: Score + Enrich + Save ─────────────────────────────
     for item, source, hash_val in pending_items:
@@ -479,12 +501,15 @@ def research_publication_sources(self, publication_id):
             verdict_info = verdict_map.get(item.url, {})
             verdict = verdict_info.get('verdict')
             reasoning = verdict_info.get('reasoning', '')
+            house_coverage = verdict_info.get('house_coverage')
 
-            # Items classified as not_news → save as rejected, skip scoring/enrichment
-            if verdict == 'not_news':
+            # not_news / already_covered → save as rejected, skip scoring/enrichment
+            if verdict in REJECT_VERDICTS:
                 reject_metadata = item.metadata or {}
                 reject_metadata['triage_verdict'] = verdict
                 reject_metadata['triage_reasoning'] = reasoning
+                if house_coverage:
+                    reject_metadata['house_coverage'] = house_coverage
 
                 candidate = CandidateArticle(
                     publication_id=publication_id,
@@ -586,6 +611,8 @@ def research_publication_sources(self, publication_id):
             if verdict:
                 enriched_metadata['triage_verdict'] = verdict
                 enriched_metadata['triage_reasoning'] = reasoning
+            if house_coverage:
+                enriched_metadata['house_coverage'] = house_coverage
 
             candidate = CandidateArticle(
                 publication_id=publication_id,
@@ -638,10 +665,12 @@ def research_publication_sources(self, publication_id):
                 # Re-check for triage verdict
                 verdict_info = verdict_map.get(item.url, {})
                 verdict = verdict_info.get('verdict')
-                if verdict == 'not_news':
+                if verdict in REJECT_VERDICTS:
                     meta = item.metadata or {}
                     meta['triage_verdict'] = verdict
                     meta['triage_reasoning'] = verdict_info.get('reasoning', '')
+                    if verdict_info.get('house_coverage'):
+                        meta['house_coverage'] = verdict_info['house_coverage']
                     candidate = CandidateArticle(
                         publication_id=publication_id,
                         news_source_id=source.id,
@@ -699,6 +728,7 @@ def retriage_source_candidates(source_id):
     """Re-run LLM triage on rejected candidates for a source using current publication settings."""
     from app.research.scrapers import DiscoveredItem
     from app.research.triage import triage_items, TRIAGE_MULTIPLIERS
+    from app.research.house_content import build_house_index
     from app.research.scoring import score_candidate
     from app.research.enrichment import enrich_item, reset_youtube_block
 
@@ -738,11 +768,20 @@ def retriage_source_candidates(source_id):
         source_types.append(source.source_type or '')
 
     # Re-triage with current publication settings
+    try:
+        house_index = build_house_index(
+            publication,
+            NewsSource.query.filter_by(publication_id=publication.id, is_active=True).all(),
+        )
+    except Exception as e:
+        logger.error(f"Re-triage: house index build failed for source {source_id}: {e}")
+        house_index = []
     verdicts = triage_items(
         items=items,
         source_types=source_types,
         industry_description=publication.industry_description or '',
         reader_personas=publication.reader_personas or '',
+        house_index=house_index,
     )
 
     verdict_map = {v['url']: v for v in verdicts}
@@ -763,6 +802,10 @@ def retriage_source_candidates(source_id):
         meta['retriage_verdict'] = new_verdict
         meta['retriage_reasoning'] = reasoning
         meta['retriage_previous_verdict'] = meta.get('triage_verdict', 'not_news')
+        if verdict_info.get('house_coverage'):
+            meta['house_coverage'] = verdict_info['house_coverage']
+        else:
+            meta.pop('house_coverage', None)
 
         if new_verdict in ('relevant_news', 'maybe'):
             # Re-score the candidate

@@ -12,7 +12,6 @@ SOURCE_WEIGHTS = {
     'YouTube Keywords': 0.75,
     'Competitor': 0.7,
     'Data': 0.85,
-    'House Content': 0.3,
 }
 
 

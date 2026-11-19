@@ -1067,6 +1067,7 @@ def get_candidates(publication_id):
                 'status': c.status,
                 'triage_verdict': (c.extra_metadata or {}).get('triage_verdict'),
                 'triage_reasoning': (c.extra_metadata or {}).get('triage_reasoning'),
+                'house_coverage': (c.extra_metadata or {}).get('house_coverage'),
                 'content_source': (c.extra_metadata or {}).get('content_source'),
                 'source': {
                     'id': c.news_source.id,
