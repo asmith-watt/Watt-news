@@ -11,268 +11,395 @@
                        publication_id=current_publication.id if current_publication else None,
                        status=status, min_score=min_score if min_score else None,
                        coverage=coverage, sort=key, direction=next_dir) }}"
-       class="inline-flex items-center space-x-1 hover:text-gray-700 {% if is_active %}text-gray-900{% endif %}">
+       class="cd-sort {% if is_active %}is-active{% endif %}"
+       {% if is_active %}aria-sort="{{ 'ascending' if direction == 'asc' else 'descending' }}"{% endif %}>
         <span>{{ label }}</span>
-        <span class="text-[10px] {% if not is_active %}opacity-30{% endif %}">
-            {%- if is_active and direction == 'asc' -%}▲{%- else -%}▼{%- endif -%}
-        </span>
+        <svg class="cd-sort-caret" viewBox="0 0 10 10" aria-hidden="true">
+            {%- if is_active and direction == 'asc' -%}
+            <path d="M2 6.5 5 3.5 8 6.5" />
+            {%- else -%}
+            <path d="M2 3.5 5 6.5 8 3.5" />
+            {%- endif -%}
+        </svg>
     </a>
 {% endmacro %}
 
+{% macro status_label(s) -%}
+    {%- if s == 'new' -%}New{%- elif s == 'selected' -%}Selected{%- elif s == 'rejected' -%}Rejected{%- elif s == 'processed' -%}Sent to writer{%- else -%}{{ s }}{%- endif -%}
+{%- endmacro %}
+
 {% block content %}
-<div class="mb-6 flex justify-between items-center">
-    <h1 class="text-3xl font-bold text-gray-800">Candidate Articles</h1>
-    {% if current_publication %}
-    <form method="POST" action="{{ url_for('main.trigger_research', id=current_publication.id) }}"
-          class="inline"
-          onsubmit="return confirm('Run research for {{ current_publication.name }}? This may take a minute.');">
-        <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            Run Research
-        </button>
-    </form>
-    {% endif %}
-</div>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 
-<div class="mb-6 flex justify-between items-center">
-    <div class="flex items-center space-x-4">
-        <label for="publication-select" class="text-sm font-medium text-gray-700">Publication:</label>
-        <select id="publication-select"
-                onchange="window.location.href=this.value"
-                class="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            {% for pub in publications %}
-            <option value="{{ url_for('main.candidates', publication_id=pub.id, status=status) }}"
-                    {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
-                {{ pub.name }}
-            </option>
-            {% endfor %}
-        </select>
-    </div>
-    {% if current_publication and current_publication.last_research_run %}
-    <span class="text-sm text-gray-500">
-        Last research: {{ current_publication.last_research_run.strftime('%Y-%m-%d %H:%M') }} UTC
-    </span>
-    {% endif %}
-</div>
+<style>
+    .cd {
+        --ink: #1F2A37;
+        --ink-soft: #4B5563;
+        --muted: #7A828E;
+        --line: #E4E7EB;
+        --line-strong: #CDD2D8;
+        --surface: #FFFFFF;
+        --wash: #F7F8FA;
+        --link: #1D4ED8;
+        --grain: #8C5E0A;
+        --grain-wash: #FBF4E6;
+        --grain-line: #E9D4A7;
+        --field: #2F6F4F;
+        --brick: #A3412F;
+        --slate: #5B4B8A;
+        font-family: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.45;
+    }
+    .cd .num { font-variant-numeric: tabular-nums; }
 
-<div class="mb-6 flex space-x-2">
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='all', coverage=coverage) }}"
-       class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        All
-    </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='new', coverage=coverage) }}"
-       class="px-4 py-2 rounded {% if status == 'new' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        New
-    </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='selected', coverage=coverage) }}"
-       class="px-4 py-2 rounded {% if status == 'selected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Selected
-    </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='rejected', coverage=coverage) }}"
-       class="px-4 py-2 rounded {% if status == 'rejected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Rejected
-    </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='processed', coverage=coverage) }}"
-       class="px-4 py-2 rounded {% if status == 'processed' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Processed
-    </a>
-    <div class="ml-auto flex items-center space-x-2">
-        <label for="coverage-select" class="text-sm font-medium text-gray-700">House coverage:</label>
-        <select id="coverage-select" onchange="window.location.href=this.value"
-                class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None) }}"
-                    {% if not coverage %}selected{% endif %}>Any</option>
-            {% for key, label in coverage_filters.items() %}
-            <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=key) }}"
-                    {% if coverage == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-</div>
+    /* Header */
+    .cd-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .cd-title { font-family: 'Newsreader', Georgia, serif; font-weight: 600; font-size: 34px; line-height: 1.1; letter-spacing: -0.01em; margin: 0; }
+    .cd-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .cd-pub { appearance: none; font: inherit; font-weight: 600; color: var(--ink); background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%237A828E' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 2px center / 10px; border: 0; border-bottom: 1px solid var(--line-strong); padding: 2px 18px 2px 0; cursor: pointer; font-size: 14px; }
+    .cd-pub:hover { border-bottom-color: var(--ink); }
 
-<div id="bulkActionBar"
-     class="hidden sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-3 bg-gray-800 text-white px-4 py-3 rounded-lg shadow">
-    <span id="bulkSelectedCount" class="text-sm font-medium">0 selected</span>
-    <div class="flex flex-wrap gap-2">
-        <button onclick="bulkUpdateStatus('selected')"
-                class="px-3 py-1 text-sm bg-green-500 rounded hover:bg-green-600">Select</button>
-        <button onclick="showBulkRejectModal()"
-                class="px-3 py-1 text-sm bg-red-500 rounded hover:bg-red-600">Reject</button>
-        <button onclick="bulkUpdateStatus('new')"
-                class="px-3 py-1 text-sm bg-gray-400 rounded hover:bg-gray-500">Reset</button>
-    </div>
-    <button onclick="clearSelection()"
-            class="ml-auto text-sm text-gray-300 hover:text-white underline">Clear</button>
-</div>
+    /* Buttons */
+    .cd-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 500; line-height: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; transition: background-color .12s, border-color .12s, color .12s; }
+    .cd-btn:hover { border-color: var(--ink-soft); background: var(--wash); }
+    .cd-btn:disabled { cursor: not-allowed; opacity: .55; }
+    .cd-btn--solid { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .cd-btn--solid:hover { background: #111827; border-color: #111827; }
+    .cd-btn--danger { background: var(--brick); border-color: var(--brick); color: #fff; }
+    .cd-btn--danger:hover { background: #8A3526; border-color: #8A3526; }
+    .cd-btn--quiet { border-color: transparent; background: transparent; color: var(--ink-soft); }
+    .cd-btn--quiet:hover { background: var(--wash); border-color: transparent; color: var(--ink); }
+    .cd-btn--sm { padding: 6px 9px; font-size: 12.5px; }
+    .cd-btn--select:hover { color: var(--field); border-color: var(--field); background: #F1F7F3; }
+    .cd-btn--reject:hover { color: var(--brick); border-color: var(--brick); background: #FBF2F0; }
+    .cd-btn.is-sent { color: var(--slate); border-color: #CFC8E3; background: #F6F4FB; }
+    .cd :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 4px; }
 
-<div class="bg-white shadow-md rounded-lg overflow-x-auto">
-    {% if candidates.items %}
-    <table class="min-w-full">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-4 py-3 text-left">
-                    <input type="checkbox" id="selectAllCandidates" onclick="toggleSelectAll(this)"
-                           class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                           title="Select all on this page">
-                </th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Score', 'score', default_desc=true) }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Title', 'title') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Source', 'source') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Published', 'published', default_desc=true) }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Discovered', 'discovered', default_desc=true) }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Status', 'status') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-            {% for item in candidates.items %}
-            <tr class="hover:bg-gray-50" id="candidate-row-{{ item.id }}">
-                <td class="px-4 py-4">
-                    <input type="checkbox" class="candidate-checkbox h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                           value="{{ item.id }}" data-status="{{ item.status }}" onchange="updateBulkBar()">
-                </td>
-                <td class="px-4 py-4">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        {% if item.relevance_score >= 70 %}bg-green-100 text-green-800
-                        {% elif item.relevance_score >= 40 %}bg-yellow-100 text-yellow-800
-                        {% else %}bg-red-100 text-red-800{% endif %}"
-                        title="Keyword: {{ item.keyword_score }} | Recency: {{ item.recency_score }} | Source: {{ item.source_weight }}">
-                        {{ "%.0f"|format(item.relevance_score) }}
-                    </span>
-                </td>
-                <td class="px-4 py-4">
-                    <div class="flex items-center space-x-1">
-                        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
-                           class="text-blue-600 hover:underline">
-                            {{ item.title[:80] if item.title else item.url[:80] }}{% if (item.title and item.title|length > 80) or (not item.title and item.url|length > 80) %}...{% endif %}
-                        </a>
-                        <button onclick="showDetail({{ item.id }})"
-                                class="text-gray-400 hover:text-blue-600 flex-shrink-0" title="View details">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </button>
-                    </div>
-                    {% if item.snippet %}
-                    <p class="text-xs text-gray-400 mt-1 truncate max-w-md">{{ item.snippet[:120] }}{% if item.snippet|length > 120 %}...{% endif %}</p>
-                    {% endif %}
-                    {% if item.status == 'rejected' %}
-                        {% set reject_reason = item.rejection_reason or (item.extra_metadata.get('triage_reasoning') if item.extra_metadata else None) %}
-                        {% if reject_reason %}
-                        <p class="text-xs text-red-700 mt-1 max-w-md whitespace-pre-wrap">
-                            <span class="font-medium">Rejected{% if not item.rejection_reason %} (auto-triage){% endif %}:</span> {{ reject_reason }}
-                        </p>
-                        {% endif %}
-                    {% endif %}
-                    {% set hc = item.extra_metadata.get('house_coverage') if item.extra_metadata else None %}
-                    {% if hc %}
-                    <p class="text-xs mt-1 max-w-md {% if hc.relation == 'follow_up' %}text-indigo-700{% else %}text-amber-700{% endif %}">
-                        <span class="font-medium">
-                            {% if hc.relation == 'same_story_own' %}Already covered
-                            {% elif hc.relation == 'same_story_sister' %}Sister site ran this ({{ hc.site|replace('www.', '') }})
-                            {% else %}Follow-up to{% endif %}:
-                        </span>
-                        {% if hc.url %}<a href="{{ hc.url }}" target="_blank" rel="noopener" class="underline">{{ hc.title }}</a>{% else %}{{ hc.title }} <span class="text-gray-400">({{ hc.site }})</span>{% endif %}
-                        {% if hc.published %}<span class="text-gray-400">· {{ hc.published }}</span>{% endif %}
-                    </p>
-                    {% endif %}
-                </td>
-                <td class="px-4 py-4 text-sm text-gray-500">
-                    {{ item.news_source.name if item.news_source else 'N/A' }}
-                </td>
-                <td class="px-4 py-4 text-sm text-gray-500">
-                    {{ item.published_date.strftime('%Y-%m-%d') if item.published_date else '-' }}
-                </td>
-                <td class="px-4 py-4 text-sm text-gray-500">
-                    {{ item.discovered_at.strftime('%Y-%m-%d %H:%M') if item.discovered_at else '-' }}
-                </td>
-                <td class="px-4 py-4">
-                    <span id="status-badge-{{ item.id }}" class="px-2 py-1 text-xs rounded-full
-                        {% if item.status == 'new' %}bg-blue-100 text-blue-800
-                        {% elif item.status == 'selected' %}bg-green-100 text-green-800
-                        {% elif item.status == 'rejected' %}bg-red-100 text-red-800
-                        {% elif item.status == 'processed' %}bg-purple-100 text-purple-800
-                        {% endif %}">
-                        {{ item.status }}
-                    </span>
-                </td>
-                <td class="px-4 py-4 text-sm space-x-1 whitespace-nowrap">
-                    {% if item.status in ('new', 'rejected') %}
-                    <button onclick="updateCandidateStatus({{ item.id }}, 'selected')"
-                            class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">
-                        Select
-                    </button>
-                    {% endif %}
-                    {% if item.status in ('new', 'selected') %}
-                    <button onclick="showRejectModal({{ item.id }})"
-                            class="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
-                        Reject
-                    </button>
-                    {% endif %}
-                    {% if item.status in ('selected', 'rejected') %}
-                    <button onclick="updateCandidateStatus({{ item.id }}, 'new')"
-                            class="px-2 py-1 text-xs bg-gray-400 text-white rounded hover:bg-gray-500">
-                        Reset
-                    </button>
-                    {% endif %}
-                    {% if item.status != 'processed' %}
-                    <button id="create-btn-{{ item.id }}"
-                            onclick="createArticle({{ item.id }}, '{{ (item.title or item.url)[:50] | e }}')"
-                            class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">
-                        Create Article
-                    </button>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    /* Filter bar */
+    .cd-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; border-bottom: 1px solid var(--line); margin-bottom: 0; }
+    .cd-tabs { display: flex; gap: 22px; overflow-x: auto; }
+    .cd-tab { display: block; padding: 10px 0 11px; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+    .cd-tab:hover { color: var(--ink); }
+    .cd-tab.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+    .cd-filter { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; color: var(--muted); font-size: 13px; }
+    .cd-select { appearance: none; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%237A828E' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 9px center / 10px; border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 28px 6px 10px; cursor: pointer; }
+    .cd-select.is-set { border-color: var(--grain-line); background-color: var(--grain-wash); color: var(--grain); font-weight: 500; }
 
-    <div class="px-6 py-4 bg-gray-50 border-t">
-        <div class="flex justify-between items-center">
-            <div class="text-sm text-gray-600">
-                Showing {{ candidates.items|length }} of {{ candidates.total }} candidates
+    /* Table */
+    .cd-panel { background: var(--surface); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; overflow-x: auto; }
+    .cd-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+    .cd-table th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+    .cd-table td { padding: 16px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .cd-table tbody tr:last-child td { border-bottom: 0; }
+    .cd-table tbody tr:hover { background: #FBFBFC; }
+    .cd-table tbody tr.is-checked { background: #F5F8FF; }
+    .cd-sort { display: inline-flex; align-items: center; gap: 4px; color: inherit; }
+    .cd-sort:hover, .cd-sort.is-active { color: var(--ink); }
+    .cd-sort-caret { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; opacity: .35; }
+    .cd-sort.is-active .cd-sort-caret { opacity: 1; }
+    .cd-check { width: 16px; height: 16px; accent-color: var(--ink); cursor: pointer; margin-top: 3px; }
+
+    .cd-score { display: block; font-weight: 600; font-size: 15px; line-height: 1.2; }
+    .cd-meter { display: block; width: 36px; height: 3px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+    .cd-meter > i { display: block; height: 100%; background: var(--ink-soft); }
+    .cd-meter.is-high > i { background: var(--field); }
+    .cd-meter.is-low > i { background: #B9BEC6; }
+
+    .cd-story { max-width: 680px; min-width: 340px; }
+    .cd-col-source { min-width: 120px; max-width: 180px; }
+    .cd-headline { font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 500; line-height: 1.3; color: var(--ink); text-decoration: none; }
+    .cd-headline:hover { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    .cd-headline.is-url { font-family: inherit; font-size: 14px; color: var(--ink-soft); word-break: break-all; }
+    .cd-info { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; }
+    .cd-info:hover { color: var(--ink); }
+    .cd-snippet { margin: 5px 0 0; color: var(--ink-soft); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .cd-note { margin: 10px 0 0; padding-left: 10px; border-left: 2px solid; font-size: 12.5px; line-height: 1.45; }
+    .cd-note b { font-weight: 600; }
+    .cd-note--reject { border-color: #E2B5AC; color: #7E3426; }
+    .cd-note--covered { border-color: var(--grain); color: var(--grain); }
+    .cd-note--sister, .cd-note--follow { border-color: var(--grain-line); color: #6E5A33; }
+    .cd-note a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    .cd-note .cd-when { color: var(--muted); margin-left: 4px; }
+
+    .cd-meta { color: var(--ink-soft); font-size: 13px; }
+    .cd-meta-sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+    .cd-status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+    .cd-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .cd-status--new::before { background: var(--link); }
+    .cd-status--selected { color: var(--field); }
+    .cd-status--selected::before { background: var(--field); }
+    .cd-status--rejected { color: var(--brick); }
+    .cd-status--rejected::before { background: var(--brick); }
+    .cd-status--processed { color: var(--slate); }
+    .cd-status--processed::before { background: var(--slate); }
+
+    .cd-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+    .cd-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .cd-empty { padding: 56px 24px; text-align: center; }
+    .cd-empty h2 { font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500; margin: 0 0 6px; }
+    .cd-empty p { color: var(--muted); margin: 0; }
+
+    /* Bulk bar */
+    .cd-bulk { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; background: var(--ink); color: #fff; border-radius: 10px 10px 0 0; }
+    .cd-bulk.hidden { display: none; }
+    .cd-bulk .cd-btn { background: transparent; color: #fff; border-color: rgba(255,255,255,.28); }
+    .cd-bulk .cd-btn:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.6); }
+    .cd-bulk-clear { margin-left: auto; color: #C9CED6; font-size: 13px; background: none; border: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .cd-bulk-clear:hover { color: #fff; }
+
+    /* Drawer + dialogs */
+    .cd-scrim { position: fixed; inset: 0; background: rgba(17, 24, 39, .38); }
+    .cd-drawer { position: fixed; inset: 0 0 0 auto; width: 100%; max-width: 520px; background: var(--surface); box-shadow: -12px 0 32px rgba(17,24,39,.12); overflow-y: auto; }
+    .cd-drawer-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .cd-drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+    .cd-icon-btn { display: inline-flex; padding: 6px; border-radius: 6px; color: var(--muted); background: none; border: 0; cursor: pointer; }
+    .cd-icon-btn:hover { background: var(--wash); color: var(--ink); }
+    .cd-d { padding: 24px; }
+    .cd-d-title { font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500; line-height: 1.25; margin: 0 0 6px; }
+    .cd-d-url { font-size: 12.5px; color: var(--link); word-break: break-all; }
+    .cd-d-sec { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .cd-d-sec h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--ink); }
+    .cd-d-sec p { margin: 0; color: var(--ink-soft); font-size: 13.5px; }
+    .cd-d-dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 0; font-size: 13.5px; }
+    .cd-d-dl dt { color: var(--muted); }
+    .cd-d-dl dd { margin: 0; color: var(--ink); word-break: break-word; }
+    .cd-callout { padding: 12px 14px; border-radius: 8px; font-size: 13.5px; }
+    .cd-callout--reject { background: #FBF2F0; color: #7E3426; }
+    .cd-callout--covered { background: var(--grain-wash); color: #5E4108; }
+    .cd-callout h3 { color: inherit; }
+    .cd-callout a { color: inherit; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+    .cd-verdict { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 3px 8px; border-radius: 4px; background: var(--wash); color: var(--ink-soft); }
+    .cd-verdict--relevant_news { background: #EEF6F1; color: var(--field); }
+    .cd-verdict--maybe { background: #F6F3EA; color: #6E5A33; }
+    .cd-verdict--not_news { background: #FBF2F0; color: var(--brick); }
+    .cd-verdict--already_covered { background: var(--grain-wash); color: var(--grain); }
+    .cd-raw summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+    .cd-raw summary:hover { color: var(--ink); }
+    .cd-raw pre { margin-top: 10px; padding: 12px; background: var(--wash); border: 1px solid var(--line); border-radius: 8px; font-size: 11.5px; color: var(--ink-soft); max-height: 260px; overflow: auto; }
+
+    .cd-dialog-wrap { position: fixed; inset: 0; z-index: 50; align-items: center; justify-content: center; background: rgba(17, 24, 39, .38); padding: 16px; }
+    .cd-dialog { width: 100%; max-width: 440px; background: var(--surface); border-radius: 12px; box-shadow: 0 20px 48px rgba(17,24,39,.18); overflow: hidden; }
+    .cd-dialog-body { padding: 22px 22px 6px; }
+    .cd-dialog h3 { margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 21px; font-weight: 600; }
+    .cd-dialog-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .cd-dialog label.cd-field { display: block; margin: 16px 0 6px; font-size: 13px; font-weight: 500; }
+    .cd-dialog textarea { width: 100%; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; resize: vertical; }
+    .cd-dialog textarea:focus { outline: 2px solid var(--link); outline-offset: 0; border-color: transparent; }
+    .cd-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; }
+    .cd-voice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+    .cd-voice:hover { border-color: var(--line-strong); background: var(--wash); }
+    .cd-voice:has(input:checked) { border-color: var(--ink); background: var(--wash); }
+    .cd-voice input { margin-top: 3px; accent-color: var(--ink); }
+    .cd-tag { font-size: 11.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+
+    @media (prefers-reduced-motion: reduce) { .cd * { transition: none !important; } }
+    @media (max-width: 640px) {
+        .cd-title { font-size: 28px; }
+        .cd-filter { width: 100%; }
+    }
+</style>
+
+<div class="cd">
+    <header class="cd-head">
+        <div>
+            <h1 class="cd-title">Candidates</h1>
+            <div class="cd-sub">
+                <label for="publication-select" class="sr-only">Publication</label>
+                <select id="publication-select" class="cd-pub" onchange="window.location.href=this.value">
+                    {% for pub in publications %}
+                    <option value="{{ url_for('main.candidates', publication_id=pub.id, status=status) }}"
+                            {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
+                        {{ pub.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if current_publication and current_publication.last_research_run %}
+                <span>Researched {{ current_publication.last_research_run.strftime('%b %-d, %H:%M') }} UTC</span>
+                {% endif %}
             </div>
-            <div class="flex space-x-2">
+        </div>
+        {% if current_publication %}
+        <form method="POST" action="{{ url_for('main.trigger_research', id=current_publication.id) }}"
+              onsubmit="return confirm('Run research for {{ current_publication.name }}? This can take several minutes.');">
+            <button type="submit" class="cd-btn">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
+                Run research
+            </button>
+        </form>
+        {% endif %}
+    </header>
+
+    <nav class="cd-bar" aria-label="Filter candidates">
+        <div class="cd-tabs">
+            {% for key, label in [('new', 'New'), ('selected', 'Selected'), ('rejected', 'Rejected'), ('processed', 'Sent to writer'), ('all', 'All')] %}
+            <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=key, coverage=coverage) }}"
+               class="cd-tab {% if status == key %}is-active{% endif %}"
+               {% if status == key %}aria-current="page"{% endif %}>{{ label }}</a>
+            {% endfor %}
+        </div>
+        <div class="cd-filter">
+            <label for="coverage-select">House coverage</label>
+            <select id="coverage-select" onchange="window.location.href=this.value" class="cd-select {% if coverage %}is-set{% endif %}">
+                <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None) }}"
+                        {% if not coverage %}selected{% endif %}>Any</option>
+                {% for key, label in coverage_filters.items() %}
+                <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=key) }}"
+                        {% if coverage == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </nav>
+
+    <div id="bulkActionBar" class="cd-bulk hidden" role="region" aria-label="Bulk actions">
+        <span id="bulkSelectedCount" class="num" style="font-weight:600">0 selected</span>
+        <button onclick="bulkUpdateStatus('selected')" class="cd-btn cd-btn--sm">Select</button>
+        <button onclick="showBulkRejectModal()" class="cd-btn cd-btn--sm">Reject</button>
+        <button onclick="bulkUpdateStatus('new')" class="cd-btn cd-btn--sm">Move back to new</button>
+        <button onclick="clearSelection()" class="cd-bulk-clear">Clear selection</button>
+    </div>
+
+    <div class="cd-panel">
+        {% if candidates.items %}
+        <table class="cd-table">
+            <thead>
+                <tr>
+                    <th style="width:36px">
+                        <input type="checkbox" id="selectAllCandidates" onclick="toggleSelectAll(this)"
+                               class="cd-check" aria-label="Select all on this page">
+                    </th>
+                    <th style="width:64px">{{ sort_header('Score', 'score', default_desc=true) }}</th>
+                    <th style="width:44%">{{ sort_header('Story', 'title') }}</th>
+                    <th>{{ sort_header('Source', 'source') }}</th>
+                    <th>{{ sort_header('Published', 'published', default_desc=true) }}</th>
+                    <th>{{ sort_header('Found', 'discovered', default_desc=true) }}</th>
+                    <th>{{ sort_header('Status', 'status') }}</th>
+                    <th><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in candidates.items %}
+                {% set score = item.relevance_score or 0 %}
+                {% set hc = item.extra_metadata.get('house_coverage') if item.extra_metadata else None %}
+                <tr id="candidate-row-{{ item.id }}">
+                    <td>
+                        <input type="checkbox" class="candidate-checkbox cd-check"
+                               value="{{ item.id }}" data-status="{{ item.status }}" onchange="updateBulkBar()"
+                               aria-label="Select {{ (item.title or item.url)[:60] }}">
+                    </td>
+                    <td title="Keyword {{ '%.0f'|format(item.keyword_score or 0) }}, recency {{ '%.0f'|format(item.recency_score or 0) }}, source weight {{ item.source_weight or 0 }}">
+                        <span class="cd-score num">{{ "%.0f"|format(score) }}</span>
+                        <span class="cd-meter {% if score >= 60 %}is-high{% elif score < 30 %}is-low{% endif %}" aria-hidden="true"><i style="width: {{ [score, 100]|min }}%"></i></span>
+                    </td>
+                    <td>
+                        <div class="cd-story">
+                            <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
+                               class="cd-headline {% if not item.title %}is-url{% endif %}">{{ item.title or item.url }}</a><button
+                               onclick="showDetail({{ item.id }})" class="cd-info" title="Details" aria-label="Show details">
+                                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v3.5M8 5.1v.1" stroke-linecap="round"/></svg>
+                            </button>
+                            {% if item.snippet %}
+                            <p class="cd-snippet">{{ item.snippet }}</p>
+                            {% endif %}
+                            {% if item.status == 'rejected' %}
+                                {% set reject_reason = item.rejection_reason or (item.extra_metadata.get('triage_reasoning') if item.extra_metadata else None) %}
+                                {% if reject_reason %}
+                                <p class="cd-note cd-note--reject">
+                                    <b>{% if item.rejection_reason %}Rejected by an editor{% else %}Rejected in triage{% endif %}:</b> {{ reject_reason }}
+                                </p>
+                                {% endif %}
+                            {% endif %}
+                            {% if hc %}
+                            <p class="cd-note {% if hc.relation == 'same_story_own' %}cd-note--covered{% elif hc.relation == 'follow_up' %}cd-note--follow{% else %}cd-note--sister{% endif %}">
+                                <b>{% if hc.relation == 'same_story_own' %}Already covered:{% elif hc.relation == 'same_story_sister' %}{{ hc.site|replace('www.', '') }} ran this:{% else %}Follow-up to:{% endif %}</b>
+                                {% if hc.url %}<a href="{{ hc.url }}" target="_blank" rel="noopener">{{ hc.title }}</a>{% else %}{{ hc.title }} ({{ hc.site }}){% endif %}{% if hc.published %}<span class="cd-when num">{{ hc.published }}</span>{% endif %}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="cd-meta cd-col-source">{{ item.news_source.name if item.news_source else '—' }}</td>
+                    <td class="cd-meta num" style="white-space:nowrap">{{ item.published_date.strftime('%b %-d') if item.published_date else '—' }}</td>
+                    <td class="cd-meta num" style="white-space:nowrap">
+                        {% if item.discovered_at %}{{ item.discovered_at.strftime('%b %-d') }}<span class="cd-meta-sub">{{ item.discovered_at.strftime('%H:%M') }}</span>{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <span id="status-badge-{{ item.id }}" class="cd-status cd-status--{{ item.status }}">{{ status_label(item.status) }}</span>
+                    </td>
+                    <td>
+                        <div class="cd-actions">
+                            {% if item.status in ('new', 'rejected') %}
+                            <button onclick="updateCandidateStatus({{ item.id }}, 'selected')" class="cd-btn cd-btn--sm cd-btn--select">Select</button>
+                            {% endif %}
+                            {% if item.status in ('new', 'selected') %}
+                            <button onclick="showRejectModal({{ item.id }})" class="cd-btn cd-btn--sm cd-btn--reject">Reject</button>
+                            {% endif %}
+                            {% if item.status in ('selected', 'rejected') %}
+                            <button onclick="updateCandidateStatus({{ item.id }}, 'new')" class="cd-btn cd-btn--sm cd-btn--quiet">Move to new</button>
+                            {% endif %}
+                            {% if item.status != 'processed' %}
+                            <button id="create-btn-{{ item.id }}"
+                                    onclick="createArticle({{ item.id }}, '{{ (item.title or item.url)[:80] | e }}')"
+                                    class="cd-btn cd-btn--sm cd-btn--solid">Write article</button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="cd-foot">
+            <span class="num">
+                {% set first = (candidates.page - 1) * candidates.per_page + 1 %}
+                {{ first }}–{{ first + candidates.items|length - 1 }} of {{ candidates.total }}
+            </span>
+            <div style="display:flex; gap:8px">
                 {% if candidates.has_prev %}
                 <a href="{{ url_for('main.candidates', page=candidates.prev_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=coverage) }}"
-                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Previous</a>
+                   class="cd-btn cd-btn--sm">Previous</a>
                 {% endif %}
                 {% if candidates.has_next %}
                 <a href="{{ url_for('main.candidates', page=candidates.next_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=coverage) }}"
-                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Next</a>
+                   class="cd-btn cd-btn--sm">Next</a>
                 {% endif %}
             </div>
         </div>
-    </div>
-    {% else %}
-    <div class="px-6 py-12 text-center text-gray-500">
-        No candidate articles found.
-        {% if current_publication %}
-        <br><span class="text-sm">Try running research or changing the status filter.</span>
+        {% else %}
+        <div class="cd-empty">
+            <h2>No candidates here</h2>
+            {% if current_publication %}
+            <p>Try another status or house coverage filter, or run research to look for new stories.</p>
+            {% else %}
+            <p>Choose a publication to see its candidates.</p>
+            {% endif %}
+        </div>
         {% endif %}
     </div>
-    {% endif %}
 </div>
 
-<!-- Detail Modal -->
-<div id="detail-modal" class="fixed inset-0 z-50 hidden">
-    <div class="fixed inset-0 bg-black bg-opacity-50" onclick="closeDetail()"></div>
-    <div class="fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-xl overflow-y-auto">
-        <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-            <h2 class="text-lg font-semibold text-gray-800" id="detail-title">Candidate Details</h2>
-            <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
+<!-- Detail drawer -->
+<div id="detail-modal" class="cd fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+    <div class="cd-scrim" onclick="closeDetail()"></div>
+    <aside class="cd-drawer">
+        <div class="cd-drawer-head">
+            <h2 id="detail-title">Candidate details</h2>
+            <button onclick="closeDetail()" class="cd-icon-btn" aria-label="Close details">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
             </button>
         </div>
-        <div id="detail-loading" class="p-6 text-center text-gray-500">Loading...</div>
-        <div id="detail-content" class="p-6 hidden"></div>
-    </div>
+        <div id="detail-loading" class="cd-d" style="color:var(--muted)">Loading details…</div>
+        <div id="detail-content" class="cd-d hidden"></div>
+    </aside>
 </div>
 
 <script>
+const STATUS_LABELS = { new: 'New', selected: 'Selected', rejected: 'Rejected', processed: 'Sent to writer' };
+
 function showDetail(candidateId) {
     const modal = document.getElementById('detail-modal');
     const loading = document.getElementById('detail-loading');
@@ -280,6 +407,7 @@ function showDetail(candidateId) {
 
     modal.classList.remove('hidden');
     loading.classList.remove('hidden');
+    loading.textContent = 'Loading details…';
     content.classList.add('hidden');
     document.body.style.overflow = 'hidden';
 
@@ -291,7 +419,7 @@ function showDetail(candidateId) {
             content.innerHTML = buildDetailHtml(data);
         })
         .catch(err => {
-            loading.textContent = 'Error loading details: ' + err;
+            loading.textContent = 'Could not load details: ' + err;
         });
 }
 
@@ -304,121 +432,107 @@ function closeDetail() {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
 
 function buildDetailHtml(d) {
-    const verdictColors = {
-        relevant_news: 'bg-green-100 text-green-800',
-        maybe: 'bg-yellow-100 text-yellow-800',
-        not_news: 'bg-red-100 text-red-800',
-        already_covered: 'bg-amber-100 text-amber-800',
+    const verdictLabels = {
+        relevant_news: 'Relevant news',
+        maybe: 'Maybe',
+        not_news: 'Not news',
+        already_covered: 'Already covered',
     };
     const coverageLabels = {
         same_story_own: 'Already covered on this site',
         same_story_sister: 'Same story ran on a sister site',
-        follow_up: 'Follow-up to an earlier house article',
+        follow_up: 'Follow-up to an earlier article',
     };
 
     let html = '';
 
-    // Title & URL
-    html += `<h3 class="font-medium text-gray-900 mb-1">${esc(d.title || 'No title')}</h3>`;
-    html += `<a href="${esc(d.url)}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${esc(d.url)}</a>`;
+    html += `<h3 class="cd-d-title">${esc(d.title || 'Untitled')}</h3>`;
+    html += `<a href="${esc(d.url)}" target="_blank" rel="noopener" class="cd-d-url">${esc(d.url)}</a>`;
 
     // Rejection reason (falls back to triage reasoning for auto-rejected candidates)
     const rejectionText = d.rejection_reason || (d.status === 'rejected' ? d.triage_reasoning : null);
     if (d.status === 'rejected' && rejectionText) {
-        const label = d.rejection_reason ? 'Rejection Reason' : 'Rejection Reason (Auto-Triage)';
-        html += `<div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-red-700 uppercase mb-1">${label}</div>`;
-        html += `<p class="text-sm text-red-800 whitespace-pre-wrap">${esc(rejectionText)}</p>`;
-        html += `</div>`;
-    }
-
-    // Triage
-    if (d.triage_verdict) {
-        const vc = verdictColors[d.triage_verdict] || 'bg-gray-100 text-gray-800';
-        html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Triage</div>`;
-        html += `<span class="px-2 py-1 text-xs rounded-full ${vc}">${esc(d.triage_verdict)}</span>`;
-        if (d.triage_reasoning && d.triage_reasoning !== rejectionText) {
-            html += `<p class="text-sm text-gray-600 mt-2">${esc(d.triage_reasoning)}</p>`;
-        }
-        html += `</div>`;
+        const label = d.rejection_reason ? 'Rejected by an editor' : 'Rejected in triage';
+        html += `<div class="cd-d-sec"><div class="cd-callout cd-callout--reject">`;
+        html += `<h3 style="margin:0 0 4px;font-size:13px;font-weight:600">${label}</h3>`;
+        html += `<p style="margin:0;color:inherit;white-space:pre-wrap">${esc(rejectionText)}</p>`;
+        html += `</div></div>`;
     }
 
     // House coverage (matching article this site or a sister site already ran)
     const hc = d.house_coverage;
     if (hc) {
-        html += `<div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-amber-700 uppercase mb-1">${esc(coverageLabels[hc.relation] || 'House coverage')}</div>`;
-        if (hc.url) {
-            html += `<a href="${esc(hc.url)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">${esc(hc.title)}</a>`;
-        } else {
-            html += `<p class="text-sm text-gray-800">${esc(hc.title)}</p>`;
+        html += `<div class="cd-d-sec"><div class="cd-callout cd-callout--covered">`;
+        html += `<h3 style="margin:0 0 4px;font-size:13px;font-weight:600">${esc(coverageLabels[hc.relation] || 'House coverage')}</h3>`;
+        html += hc.url
+            ? `<a href="${esc(hc.url)}" target="_blank" rel="noopener">${esc(hc.title)}</a>`
+            : `<span>${esc(hc.title)}</span>`;
+        html += `<div style="margin-top:4px;font-size:12.5px;opacity:.8">${esc((hc.site || '').replace('www.', ''))}${hc.published ? ', ' + esc(hc.published) : ''}</div>`;
+        html += `</div></div>`;
+    }
+
+    // Triage
+    if (d.triage_verdict) {
+        html += `<section class="cd-d-sec"><h3>Triage</h3>`;
+        html += `<span class="cd-verdict cd-verdict--${esc(d.triage_verdict)}">${esc(verdictLabels[d.triage_verdict] || d.triage_verdict)}</span>`;
+        if (d.triage_reasoning && d.triage_reasoning !== rejectionText) {
+            html += `<p style="margin-top:8px">${esc(d.triage_reasoning)}</p>`;
         }
-        html += `<p class="text-xs text-gray-500 mt-1">${esc(hc.site || '')}${hc.published ? ' · ' + esc(hc.published) : ''}</p>`;
-        html += `</div>`;
+        html += `</section>`;
     }
 
     // Scores
-    html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
-    html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Scores</div>`;
-    html += `<div class="grid grid-cols-2 gap-2 text-sm">`;
+    html += `<section class="cd-d-sec"><h3>Score</h3><dl class="cd-d-dl num">`;
     html += row('Relevance', fmt(d.relevance_score));
     html += row('Keyword', fmt(d.keyword_score));
     html += row('Recency', fmt(d.recency_score));
-    html += row('Source Weight', fmt(d.source_weight));
-    html += `</div></div>`;
+    html += row('Source weight', fmt(d.source_weight));
+    html += `</dl></section>`;
 
-    // Source & Dates
-    html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
-    html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Source</div>`;
-    html += `<div class="grid grid-cols-2 gap-2 text-sm">`;
-    html += row('Source', esc(d.source_name || '-'));
-    html += row('Type', esc(d.source_type || '-'));
-    html += row('Published', d.published_date ? d.published_date.split('T')[0] : '-');
-    html += row('Discovered', d.discovered_at ? d.discovered_at.replace('T', ' ').slice(0, 16) : '-');
-    html += `</div></div>`;
+    // Source & dates
+    html += `<section class="cd-d-sec"><h3>Source</h3><dl class="cd-d-dl">`;
+    html += row('Source', esc(d.source_name || '—'));
+    html += row('Type', esc(d.source_type || '—'));
+    html += row('Status', esc(STATUS_LABELS[d.status] || d.status || '—'));
+    html += row('Published', d.published_date ? d.published_date.split('T')[0] : '—');
+    html += row('Found', d.discovered_at ? d.discovered_at.replace('T', ' ').slice(0, 16) + ' UTC' : '—');
+    html += `</dl></section>`;
 
     // Enrichment
     if (d.content_source || d.content_length || d.enrichment_error) {
-        html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Enrichment</div>`;
-        html += `<div class="grid grid-cols-2 gap-2 text-sm">`;
-        if (d.content_source) html += row('Content Source', esc(d.content_source));
+        html += `<section class="cd-d-sec"><h3>Full text</h3><dl class="cd-d-dl">`;
+        if (d.content_source) html += row('Fetched from', esc(d.content_source));
         if (d.content_format) html += row('Format', esc(d.content_format));
-        if (d.content_length) html += row('Content Length', d.content_length.toLocaleString() + ' chars');
-        if (d.feed_url) html += row('Feed URL', `<a href="${esc(d.feed_url)}" target="_blank" class="text-blue-600 hover:underline break-all">${esc(d.feed_url)}</a>`);
-        if (d.enrichment_error) html += `<div class="col-span-2 text-red-600">${esc(d.enrichment_error)}</div>`;
-        html += `</div></div>`;
+        if (d.content_length) html += row('Length', d.content_length.toLocaleString() + ' characters');
+        if (d.feed_url) html += row('Feed', `<a href="${esc(d.feed_url)}" target="_blank" rel="noopener" class="cd-d-url">${esc(d.feed_url)}</a>`);
+        if (d.enrichment_error) html += row('Error', `<span style="color:var(--brick)">${esc(d.enrichment_error)}</span>`);
+        html += `</dl></section>`;
     }
 
     // Snippet
     if (d.snippet) {
-        html += `<div class="mt-4 p-3 bg-gray-50 rounded-lg">`;
-        html += `<div class="text-xs font-medium text-gray-500 uppercase mb-2">Snippet</div>`;
-        html += `<p class="text-sm text-gray-700">${esc(d.snippet)}</p>`;
-        html += `</div>`;
+        html += `<section class="cd-d-sec"><h3>Snippet</h3><p>${esc(d.snippet)}</p></section>`;
     }
 
     // Raw metadata (collapsible)
     if (d.metadata && Object.keys(d.metadata).length) {
-        // Filter out full_content and rss_full_content for display
         const displayMeta = Object.assign({}, d.metadata);
         if (displayMeta.full_content) displayMeta.full_content = `[${displayMeta.full_content.length} chars]`;
         if (displayMeta.rss_full_content) displayMeta.rss_full_content = `[${displayMeta.rss_full_content.length} chars]`;
 
-        html += `<details class="mt-4">`;
-        html += `<summary class="text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700">Raw Metadata</summary>`;
-        html += `<pre class="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto max-h-64 overflow-y-auto">${esc(JSON.stringify(displayMeta, null, 2))}</pre>`;
-        html += `</details>`;
+        html += `<section class="cd-d-sec"><details class="cd-raw">`;
+        html += `<summary>Raw metadata</summary>`;
+        html += `<pre>${esc(JSON.stringify(displayMeta, null, 2))}</pre>`;
+        html += `</details></section>`;
     }
 
     return html;
 }
 
 function row(label, value) {
-    return `<div class="text-gray-500">${label}</div><div class="text-gray-900">${value}</div>`;
+    return `<dt>${label}</dt><dd>${value}</dd>`;
 }
-function fmt(v) { return v != null ? v.toFixed(1) : '-'; }
+function fmt(v) { return v != null ? v.toFixed(1) : '—'; }
 function esc(s) {
     if (!s) return '';
     const div = document.createElement('div');
@@ -443,6 +557,13 @@ function hideCandidateAuthorModal() {
     pendingCandidateId = null;
 }
 
+function setStatusBadge(candidateId, status) {
+    const badge = document.getElementById(`status-badge-${candidateId}`);
+    if (!badge) return;
+    badge.textContent = STATUS_LABELS[status] || status;
+    badge.className = `cd-status cd-status--${status}`;
+}
+
 function submitCandidateWithAuthor() {
     if (!pendingCandidateId) return;
 
@@ -454,9 +575,13 @@ function submitCandidateWithAuthor() {
 
     const btn = document.getElementById(`create-btn-${candidateId}`);
     btn.disabled = true;
-    btn.textContent = 'Sending...';
-    btn.className = 'px-2 py-1 text-xs bg-gray-400 text-white rounded cursor-not-allowed';
+    btn.textContent = 'Sending…';
     const body = authorId ? { author_profile_id: authorId } : {};
+
+    const restore = () => {
+        btn.disabled = false;
+        btn.textContent = 'Write article';
+    };
 
     fetch(`/candidate/${candidateId}/create-article`, {
         method: 'POST',
@@ -466,23 +591,17 @@ function submitCandidateWithAuthor() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            btn.textContent = 'Sent';
-            btn.className = 'px-2 py-1 text-xs bg-purple-500 text-white rounded';
-            const badge = document.getElementById(`status-badge-${candidateId}`);
-            badge.textContent = 'processed';
-            badge.className = 'px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800';
+            btn.textContent = 'Sent to writer';
+            btn.className = 'cd-btn cd-btn--sm is-sent';
+            setStatusBadge(candidateId, 'processed');
         } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
-            btn.disabled = false;
-            btn.textContent = 'Create Article';
-            btn.className = 'px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600';
+            alert('Could not send to the writer: ' + (data.error || 'unknown error'));
+            restore();
         }
     })
     .catch(error => {
-        alert('Error: ' + error);
-        btn.disabled = false;
-        btn.textContent = 'Create Article';
-        btn.className = 'px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600';
+        alert('Could not send to the writer: ' + error);
+        restore();
     });
 }
 
@@ -496,13 +615,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && pendingCandidateId) hideCandidateAuthorModal();
-    if (e.key === 'Escape' && pendingRejectCandidateId) hideRejectModal();
+    if (e.key === 'Escape' && (pendingRejectCandidateId || bulkRejectMode)) hideRejectModal();
 });
 
 let pendingRejectCandidateId = null;
 
 function showRejectModal(candidateId) {
     pendingRejectCandidateId = candidateId;
+    document.getElementById('rejectModalTitle').textContent = 'Reject this candidate';
     const modal = document.getElementById('rejectModal');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -538,11 +658,11 @@ function submitRejection() {
         if (data.success) {
             location.reload();
         } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
+            alert('Could not reject: ' + (data.error || 'unknown error'));
         }
     })
     .catch(error => {
-        alert('Error updating status: ' + error);
+        alert('Could not reject: ' + error);
     });
 }
 
@@ -555,23 +675,15 @@ function updateCandidateStatus(candidateId, newStatus) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Update badge
-            const badge = document.getElementById(`status-badge-${candidateId}`);
-            badge.textContent = data.status;
-            badge.className = 'px-2 py-1 text-xs rounded-full ';
-            if (data.status === 'new') badge.className += 'bg-blue-100 text-blue-800';
-            else if (data.status === 'selected') badge.className += 'bg-green-100 text-green-800';
-            else if (data.status === 'rejected') badge.className += 'bg-red-100 text-red-800';
-            else if (data.status === 'processed') badge.className += 'bg-purple-100 text-purple-800';
-
+            setStatusBadge(candidateId, data.status);
             // Reload to update action buttons
             location.reload();
         } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
+            alert('Could not update status: ' + (data.error || 'unknown error'));
         }
     })
     .catch(error => {
-        alert('Error updating status: ' + error);
+        alert('Could not update status: ' + error);
     });
 }
 
@@ -592,6 +704,7 @@ function getSelectedCheckboxes() {
 function updateBulkBar() {
     const selected = getSelectedCheckboxes();
     const bar = document.getElementById('bulkActionBar');
+    const panel = document.querySelector('.cd-panel');
     if (selected.length === 0) {
         bar.classList.add('hidden');
     } else {
@@ -599,6 +712,10 @@ function updateBulkBar() {
         document.getElementById('bulkSelectedCount').textContent =
             selected.length + ' selected';
     }
+    document.querySelectorAll('.candidate-checkbox').forEach(cb => {
+        const tr = cb.closest('tr');
+        if (tr) tr.classList.toggle('is-checked', cb.checked);
+    });
     // Keep the select-all box in sync.
     const all = document.querySelectorAll('.candidate-checkbox');
     const selectAll = document.getElementById('selectAllCandidates');
@@ -621,8 +738,10 @@ function clearSelection() {
 }
 
 function showBulkRejectModal() {
-    if (getSelectedCheckboxes().length === 0) return;
+    const count = getSelectedCheckboxes().length;
+    if (count === 0) return;
     bulkRejectMode = true;
+    document.getElementById('rejectModalTitle').textContent = `Reject ${count} candidate${count === 1 ? '' : 's'}`;
     const modal = document.getElementById('rejectModal');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -639,7 +758,7 @@ function bulkUpdateStatus(newStatus, rejectionReason) {
     const ineligible = selected.filter(cb => !validSources.includes(cb.dataset.status)).length;
     if (ineligible > 0) {
         const verb = newStatus === 'rejected' ? 'rejected'
-                   : newStatus === 'selected' ? 'selected' : 'reset';
+                   : newStatus === 'selected' ? 'selected' : 'moved back to new';
         if (!confirm(`${ineligible} of ${ids.length} selected can't be ${verb} and will be skipped. Continue?`)) {
             return;
         }
@@ -658,80 +777,61 @@ function bulkUpdateStatus(newStatus, rejectionReason) {
         if (data.success) {
             location.reload();
         } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
+            alert('Could not update candidates: ' + (data.error || 'unknown error'));
         }
     })
     .catch(error => {
-        alert('Error updating candidates: ' + error);
+        alert('Could not update candidates: ' + error);
     });
 }
 </script>
 
-<!-- Rejection Modal -->
-<div id="rejectModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Reject Candidate</h3>
+<!-- Rejection dialog -->
+<div id="rejectModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
+    <div class="cd-dialog">
+        <div class="cd-dialog-body">
+            <h3 id="rejectModalTitle">Reject this candidate</h3>
+            <label for="rejectionReason" class="cd-field">Reason <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <textarea id="rejectionReason" rows="3"
+                      placeholder="For example: off-topic for our readers, or we covered it last week"></textarea>
         </div>
-        <div class="px-6 py-4">
-            <label for="rejectionReason" class="block text-sm font-medium text-gray-700 mb-2">
-                Rejection Reason (optional)
-            </label>
-            <textarea id="rejectionReason" rows="4"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="Enter the reason for rejection..."></textarea>
-        </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="hideRejectModal()"
-                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
-                Cancel
-            </button>
-            <button onclick="submitRejection()"
-                class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                Reject
-            </button>
+        <div class="cd-dialog-foot">
+            <button onclick="hideRejectModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitRejection()" class="cd-btn cd-btn--danger">Reject</button>
         </div>
     </div>
 </div>
 
-<!-- Author Selection Modal for Candidates -->
-<div id="candidateAuthorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Select Author Voice</h3>
-            <p class="text-sm text-gray-500 mt-1" id="candidate-author-title"></p>
-        </div>
-        <div class="px-6 py-4">
-            {% if author_profiles %}
-            <div class="space-y-3 max-h-64 overflow-y-auto">
-                {% for profile in author_profiles %}
-                <label class="flex items-start p-3 rounded border cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input type="radio" name="candidate_modal_author" value="{{ profile.id }}"
-                           {% if profile.is_default %}checked{% endif %}
-                           class="mt-1 mr-3">
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center space-x-2">
-                            <span class="font-medium text-gray-900">{{ profile.name }}</span>
-                            {% if profile.is_default %}
-                            <span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Default</span>
+<!-- Author voice dialog -->
+<div id="candidateAuthorModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="candidateAuthorModalTitle">
+    <div class="cd-dialog">
+        <div class="cd-dialog-body">
+            <h3 id="candidateAuthorModalTitle">Choose an author voice</h3>
+            <p class="cd-dialog-sub" id="candidate-author-title"></p>
+            <div style="margin-top:16px">
+                {% if author_profiles %}
+                <div style="display:grid; gap:8px; max-height:280px; overflow-y:auto">
+                    {% for profile in author_profiles %}
+                    <label class="cd-voice">
+                        <input type="radio" name="candidate_modal_author" value="{{ profile.id }}"
+                               {% if profile.is_default %}checked{% endif %}>
+                        <span style="min-width:0">
+                            <span style="font-weight:600">{{ profile.name }}</span>{% if profile.is_default %}<span class="cd-tag">Default</span>{% endif %}
+                            {% if profile.style_guide %}
+                            <span style="display:block; margin-top:3px; font-size:12.5px; color:var(--muted)">{{ profile.style_guide[:120] }}…</span>
                             {% endif %}
-                        </div>
-                        {% if profile.style_guide %}
-                        <p class="text-xs text-gray-500 mt-1">{{ profile.style_guide[:120] }}...</p>
-                        {% endif %}
-                    </div>
-                </label>
-                {% endfor %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p style="margin:0; color:var(--muted); font-size:13.5px">This publication has no author voices yet, so the article uses the default style.</p>
+                {% endif %}
             </div>
-            {% else %}
-            <p class="text-sm text-gray-500">No author profiles configured.</p>
-            {% endif %}
         </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="hideCandidateAuthorModal()"
-                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-            <button onclick="submitCandidateWithAuthor()"
-                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Continue</button>
+        <div class="cd-dialog-foot">
+            <button onclick="hideCandidateAuthorModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitCandidateWithAuthor()" class="cd-btn cd-btn--solid">Write article</button>
         </div>
     </div>
 </div>
