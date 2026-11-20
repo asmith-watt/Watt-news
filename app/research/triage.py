@@ -39,11 +39,16 @@ TRIAGE_MULTIPLIERS = {
     'relevant_news': 1.15,
     'maybe': 1.0,
     'not_news': 0.0,
-    'already_covered': 0.0,
+    # Kept at full score so editors see how relevant it is; it is marked and
+    # filterable, and the n8n candidates API leaves it out by default.
+    'already_covered': 1.0,
 }
 
 # Verdicts that save the candidate as rejected and skip scoring/enrichment.
-REJECT_VERDICTS = {'not_news', 'already_covered'}
+REJECT_VERDICTS = {'not_news'}
+
+# Verdicts whose candidates are kept but not worth Firecrawl budget.
+SKIP_ENRICHMENT_VERDICTS = {'already_covered'}
 
 _COVERAGE_VALUES = {'same_story', 'follow_up'}
 
@@ -73,7 +78,7 @@ def triage_items(items, source_types, industry_description, reader_personas,
         One dict per input item: {url, verdict, reasoning, published_date,
         house_coverage}. verdict is 'relevant_news', 'maybe', 'not_news', or
         'already_covered' (same story already run on the publication's own
-        site). house_coverage is None or a dict describing the matching house
+        site; kept as a marked candidate, not rejected). house_coverage is None or a dict describing the matching house
         article and how it relates (see ``_apply_coverage``).
     """
     if not items:
@@ -390,7 +395,8 @@ def _apply_coverage(verdict, raw, house_index):
     """Turn the model's coverage fields into a final verdict and a flag.
 
     - Same story on the publication's own site (or an unpublished draft here)
-      -> verdict 'already_covered', which is saved as rejected.
+      -> verdict 'already_covered'. The candidate is kept, marked, and left
+      out of automatic generation.
     - Same story on a sister site, or a follow-up to any house article -> the
       verdict stands and the candidate carries a house_coverage flag so the
       editor can see the related article.

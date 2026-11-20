@@ -1231,6 +1231,7 @@ def candidates():
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', 'new')
     min_score = request.args.get('min_score', 0, type=float)
+    coverage = request.args.get('coverage') or None
     sort = request.args.get('sort', 'score')
     direction = request.args.get('direction', 'desc' if sort == 'score' else 'asc')
     if sort not in CANDIDATE_SORT_COLUMNS:
@@ -1264,6 +1265,11 @@ def candidates():
     if min_score > 0:
         query = query.filter(CandidateArticle.relevance_score >= min_score)
 
+    from app.research.house_content import apply_coverage_filter, COVERAGE_FILTERS
+    if coverage not in COVERAGE_FILTERS:
+        coverage = None
+    query = apply_coverage_filter(query, coverage)
+
     sort_col = CANDIDATE_SORT_COLUMNS[sort]
     sort_expr = sort_col.desc() if direction == 'desc' else sort_col.asc()
     # Tiebreak by id for stable pagination across columns with duplicates
@@ -1279,6 +1285,7 @@ def candidates():
 
     return render_template('main/candidates.html', title='Candidate Articles',
                            candidates=candidates_page, status=status, min_score=min_score,
+                           coverage=coverage, coverage_filters=COVERAGE_FILTERS,
                            sort=sort, direction=direction,
                            publications=publications, current_publication=current_publication,
                            author_profiles=author_profiles)

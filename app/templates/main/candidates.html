@@ -10,7 +10,7 @@
     <a href="{{ url_for('main.candidates',
                        publication_id=current_publication.id if current_publication else None,
                        status=status, min_score=min_score if min_score else None,
-                       sort=key, direction=next_dir) }}"
+                       coverage=coverage, sort=key, direction=next_dir) }}"
        class="inline-flex items-center space-x-1 hover:text-gray-700 {% if is_active %}text-gray-900{% endif %}">
         <span>{{ label }}</span>
         <span class="text-[10px] {% if not is_active %}opacity-30{% endif %}">
@@ -55,26 +55,38 @@
 </div>
 
 <div class="mb-6 flex space-x-2">
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='all') }}"
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='all', coverage=coverage) }}"
        class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
         All
     </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='new') }}"
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='new', coverage=coverage) }}"
        class="px-4 py-2 rounded {% if status == 'new' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
         New
     </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='selected') }}"
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='selected', coverage=coverage) }}"
        class="px-4 py-2 rounded {% if status == 'selected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
         Selected
     </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='rejected') }}"
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='rejected', coverage=coverage) }}"
        class="px-4 py-2 rounded {% if status == 'rejected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
         Rejected
     </a>
-    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='processed') }}"
+    <a href="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status='processed', coverage=coverage) }}"
        class="px-4 py-2 rounded {% if status == 'processed' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
         Processed
     </a>
+    <div class="ml-auto flex items-center space-x-2">
+        <label for="coverage-select" class="text-sm font-medium text-gray-700">House coverage:</label>
+        <select id="coverage-select" onchange="window.location.href=this.value"
+                class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None) }}"
+                    {% if not coverage %}selected{% endif %}>Any</option>
+            {% for key, label in coverage_filters.items() %}
+            <option value="{{ url_for('main.candidates', publication_id=current_publication.id if current_publication else None, status=status, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=key) }}"
+                    {% if coverage == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
 </div>
 
 <div id="bulkActionBar"
@@ -223,11 +235,11 @@
             </div>
             <div class="flex space-x-2">
                 {% if candidates.has_prev %}
-                <a href="{{ url_for('main.candidates', page=candidates.prev_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None) }}"
+                <a href="{{ url_for('main.candidates', page=candidates.prev_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=coverage) }}"
                    class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Previous</a>
                 {% endif %}
                 {% if candidates.has_next %}
-                <a href="{{ url_for('main.candidates', page=candidates.next_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None) }}"
+                <a href="{{ url_for('main.candidates', page=candidates.next_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction, min_score=min_score if min_score else None, coverage=coverage) }}"
                    class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Next</a>
                 {% endif %}
             </div>

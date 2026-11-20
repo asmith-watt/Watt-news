@@ -256,3 +256,36 @@ def format_house_index(entries: List[dict]) -> str:
             line += f" — {e['deck']}"
         lines.append(line)
     return '\n'.join(lines)
+
+
+# Candidate-list filter values → house_coverage.relation they match.
+COVERAGE_FILTERS = {
+    'covered': 'Already covered',
+    'not_covered': 'Not already covered',
+    'follow_up': 'Follow-ups',
+    'sister': 'Sister site ran it',
+    'any_flag': 'Any house match',
+}
+_FILTER_RELATIONS = {
+    'covered': 'same_story_own',
+    'follow_up': 'follow_up',
+    'sister': 'same_story_sister',
+}
+
+
+def apply_coverage_filter(query, coverage: Optional[str]):
+    """Filter a CandidateArticle query by its house_coverage mark.
+
+    Unknown or empty values leave the query unchanged.
+    """
+    from sqlalchemy import or_
+    from app.models import CandidateArticle
+
+    if coverage not in COVERAGE_FILTERS:
+        return query
+    relation = CandidateArticle.extra_metadata['house_coverage']['relation'].as_string()
+    if coverage == 'any_flag':
+        return query.filter(relation.isnot(None))
+    if coverage == 'not_covered':
+        return query.filter(or_(relation.is_(None), relation != 'same_story_own'))
+    return query.filter(relation == _FILTER_RELATIONS[coverage])

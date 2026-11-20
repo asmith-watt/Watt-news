@@ -1037,12 +1037,18 @@ def get_candidates(publication_id):
     min_score = request.args.get('min_score', 0, type=float)
     limit = min(request.args.get('limit', 20, type=int), 100)
     source_id = request.args.get('source_id', type=int)
+    # Stories the publication already ran stay out of automatic generation
+    # unless the caller asks for them.
+    include_covered = request.args.get('include_covered', 'false').lower() == 'true'
 
     query = CandidateArticle.query.filter(
         CandidateArticle.publication_id == publication_id,
         CandidateArticle.status == status,
         CandidateArticle.relevance_score >= min_score,
     )
+    if not include_covered:
+        from app.research.house_content import apply_coverage_filter
+        query = apply_coverage_filter(query, 'not_covered')
 
     if source_id:
         query = query.filter(CandidateArticle.news_source_id == source_id)

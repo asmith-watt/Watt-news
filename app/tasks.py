@@ -300,7 +300,8 @@ def research_publication_sources(self, publication_id):
     from app.research.scoring import score_candidate, compute_recency_score
     from app.research.enrichment import enrich_item, _extract_date_from_url, reset_youtube_block
     from app.research.triage import (
-        triage_items, TRIAGE_MULTIPLIERS, REJECT_VERDICTS, _SKIP_TRIAGE_SOURCE_TYPES,
+        triage_items, TRIAGE_MULTIPLIERS, REJECT_VERDICTS, SKIP_ENRICHMENT_VERDICTS,
+        _SKIP_TRIAGE_SOURCE_TYPES,
     )
     from app.research.house_content import build_house_index
 
@@ -503,7 +504,7 @@ def research_publication_sources(self, publication_id):
             reasoning = verdict_info.get('reasoning', '')
             house_coverage = verdict_info.get('house_coverage')
 
-            # not_news / already_covered → save as rejected, skip scoring/enrichment
+            # not_news → save as rejected, skip scoring/enrichment
             if verdict in REJECT_VERDICTS:
                 reject_metadata = item.metadata or {}
                 reject_metadata['triage_verdict'] = verdict
@@ -551,6 +552,7 @@ def research_publication_sources(self, publication_id):
             wants_enrichment = (
                 scores['relevance_score'] >= enrichment_min_score
                 and source.source_type != 'Data'
+                and verdict not in SKIP_ENRICHMENT_VERDICTS
             )
             # RSS and YouTube enrichment is free; only Firecrawl costs budget
             is_free_enrichment = (
@@ -727,7 +729,7 @@ def research_publication_sources(self, publication_id):
 def retriage_source_candidates(source_id):
     """Re-run LLM triage on rejected candidates for a source using current publication settings."""
     from app.research.scrapers import DiscoveredItem
-    from app.research.triage import triage_items, TRIAGE_MULTIPLIERS
+    from app.research.triage import triage_items, TRIAGE_MULTIPLIERS, SKIP_ENRICHMENT_VERDICTS
     from app.research.house_content import build_house_index
     from app.research.scoring import score_candidate
     from app.research.enrichment import enrich_item, reset_youtube_block
@@ -807,7 +809,7 @@ def retriage_source_candidates(source_id):
         else:
             meta.pop('house_coverage', None)
 
-        if new_verdict in ('relevant_news', 'maybe'):
+        if new_verdict in ('relevant_news', 'maybe', 'already_covered'):
             # Re-score the candidate
             scores = score_candidate(
                 title=candidate.title,
@@ -829,6 +831,7 @@ def retriage_source_candidates(source_id):
             if (
                 scores['relevance_score'] >= enrichment_min_score
                 and source.source_type != 'Data'
+                and new_verdict not in SKIP_ENRICHMENT_VERDICTS
                 and (is_free_enrichment or enrichments_used < enrichment_budget)
             ):
                 enrich_item(candidate.url, meta, source.source_type or '', source_url=source.url)
