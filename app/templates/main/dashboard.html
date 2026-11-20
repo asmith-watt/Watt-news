@@ -10,238 +10,188 @@
     <a href="{{ url_for('main.dashboard',
                        publication_id=current_publication.id if current_publication else None,
                        status=status, sort=key, direction=next_dir) }}"
-       class="inline-flex items-center space-x-1 hover:text-gray-700 {% if is_active %}text-gray-900{% endif %}">
+       class="cd-sort {% if is_active %}is-active{% endif %}"
+       {% if is_active %}aria-sort="{{ 'ascending' if direction == 'asc' else 'descending' }}"{% endif %}>
         <span>{{ label }}</span>
-        <span class="text-[10px] {% if not is_active %}opacity-30{% endif %}">
-            {%- if is_active and direction == 'asc' -%}▲{%- else -%}▼{%- endif -%}
-        </span>
+        <svg class="cd-sort-caret" viewBox="0 0 10 10" aria-hidden="true">
+            {%- if is_active and direction == 'asc' -%}
+            <path d="M2 6.5 5 3.5 8 6.5" />
+            {%- else -%}
+            <path d="M2 3.5 5 6.5 8 3.5" />
+            {%- endif -%}
+        </svg>
     </a>
 {% endmacro %}
 
+{% macro content_status(s) -%}
+    {%- if s == 'staged' -%}In review{%- elif s == 'approved' -%}Approved{%- elif s == 'published' -%}Published{%- elif s == 'rejected' -%}Rejected{%- else -%}{{ s }}{%- endif -%}
+{%- endmacro %}
+
 {% block content %}
-<div class="mb-6">
+<div class="cd">
+    <header class="cd-head">
+        <div>
+            <h1 class="cd-title">Content production</h1>
+            <div class="cd-sub">
+                <label for="publication-select" class="sr-only">Publication</label>
+                <select id="publication-select" class="cd-pub" onchange="window.location.href=this.value">
+                    {% for pub in publications %}
+                    <option value="{{ url_for('main.dashboard', publication_id=pub.id, status=status) }}"
+                            {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
+                        {{ pub.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        {% if current_publication %}
+        <div class="cd-row">
+            <button onclick="openRecipeModal()" class="cd-btn">New recipe</button>
+            <button onclick="showAuthorModal('candidates')" class="cd-btn cd-btn--solid">Write from selected candidates</button>
+        </div>
+        {% endif %}
+    </header>
+
     {% if current_publication %}
-    <div class="flex items-center space-x-3">
-        <button onclick="showAuthorModal('candidates')"
-                class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 whitespace-nowrap">
-            Generate from Candidates
-        </button>
-        <button onclick="openRecipeModal()"
-                class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 whitespace-nowrap">
-            Create Content Recipe
-        </button>
-        <div class="bg-white shadow-sm rounded-lg border border-gray-200 px-4 py-3 flex items-center space-x-3">
-            <label for="source-url-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">One-Off Article:</label>
-            <input type="url" id="source-url-input" placeholder="Paste a source article URL..."
-                   class="px-3 py-2 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-72">
-            <button onclick="showAuthorModal('url')"
-                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
-                Generate Article
-            </button>
+    <div class="cd-card cd-card-pad" style="margin-bottom:16px">
+        <label for="source-url-input" class="cd-label">Write an article from a link</label>
+        <div class="cd-row" style="flex-wrap:nowrap">
+            <input type="url" id="source-url-input" class="cd-input" placeholder="Paste the source article's URL"
+                   onkeydown="if (event.key === 'Enter') showAuthorModal('url')">
+            <button onclick="showAuthorModal('url')" class="cd-btn cd-btn--solid">Write article</button>
         </div>
     </div>
     {% endif %}
-</div>
 
-<!-- Workflow Status Banner -->
-<div id="workflow-status" class="hidden mb-6 p-4 rounded-lg flex items-center justify-between">
-    <div class="flex items-center space-x-3">
-        <div id="workflow-spinner" class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-        <span id="workflow-message" class="font-medium"></span>
+    <!-- Workflow status -->
+    <div id="workflow-status" class="cd-notice hidden" role="status" style="margin-bottom:16px">
+        <span id="workflow-spinner" class="cd-spin"></span>
+        <span id="workflow-message" style="font-weight:500"></span>
+        <span class="cd-spacer"></span>
+        <button onclick="dismissWorkflowStatus()" class="cd-icon-btn" aria-label="Dismiss">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
+        </button>
     </div>
-    <button onclick="dismissWorkflowStatus()" class="text-white hover:text-gray-200">
-        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-    </button>
-</div>
 
-<div class="mb-6 flex justify-between items-center">
-    <div class="flex items-center space-x-4">
-        <label for="publication-select" class="text-sm font-medium text-gray-700">Publication:</label>
-        <select id="publication-select"
-                onchange="window.location.href=this.value"
-                class="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            {% for pub in publications %}
-            <option value="{{ url_for('main.dashboard', publication_id=pub.id, status=status) }}"
-                    {% if current_publication and current_publication.id == pub.id %}selected{% endif %}>
-                {{ pub.name }}
-            </option>
+    <div class="cd-stack" style="margin-bottom:28px">
+        {% if briefing %}
+        <details class="cd-card cd-fold">
+            <summary>
+                <svg class="cd-fold-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>
+                <h2 class="cd-h2">Weekly briefing</h2>
+                <span class="cd-count num">{{ briefing.period_start.strftime('%b %-d') }} to {{ briefing.period_end.strftime('%b %-d, %Y') }}, from {{ briefing.candidate_count }} candidates</span>
+                <span class="cd-spacer"></span>
+                <button onclick="event.preventDefault(); regenerateBriefing()" id="regen-briefing-btn" class="cd-btn cd-btn--sm cd-btn--quiet">Regenerate</button>
+            </summary>
+            <div class="cd-card-pad" style="white-space:pre-line; color:var(--ink-soft); max-width:80ch; line-height:1.6">{{ briefing.summary }}</div>
+        </details>
+        {% elif current_publication %}
+        <div class="cd-card cd-card-pad cd-row">
+            <div>
+                <h2 class="cd-h2">Weekly briefing</h2>
+                <p class="cd-muted cd-small" style="margin:2px 0 0">No briefing yet for this week.</p>
+            </div>
+            <span class="cd-spacer"></span>
+            <button onclick="regenerateBriefing()" id="regen-briefing-btn" class="cd-btn cd-btn--sm">Write briefing</button>
+        </div>
+        {% endif %}
+
+        {% if current_publication %}
+        <details class="cd-card cd-fold">
+            <summary>
+                <svg class="cd-fold-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>
+                <h2 class="cd-h2">Recipes</h2>
+                <span class="cd-count num">{{ recipes|length }} saved</span>
+                <span class="cd-spacer"></span>
+                <button onclick="event.preventDefault(); openRecipeModal()" class="cd-btn cd-btn--sm cd-btn--quiet">New recipe</button>
+            </summary>
+            {% if recipes %}
+            <table class="cd-table" style="min-width:0">
+                <tbody>
+                    {% for recipe in recipes %}
+                    <tr id="recipe-row-{{ recipe.id }}">
+                        <td style="padding:12px 18px">
+                            <div style="font-weight:600">{{ recipe.name }}</div>
+                            <div class="cd-muted cd-small" style="margin-top:2px">
+                                {{ recipe.candidates|length }} candidate{{ '' if recipe.candidates|length == 1 else 's' }}{% if recipe.static_sources|length %}, {{ recipe.static_sources|length }} pasted source{{ '' if recipe.static_sources|length == 1 else 's' }}{% endif %}{% if recipe.author_profile %}, written as {{ recipe.author_profile.name }}{% endif %}{% if recipe.last_run_at %}. Last run {{ recipe.last_run_at.strftime('%b %-d, %H:%M') }}{% endif %}
+                            </div>
+                        </td>
+                        <td style="padding:12px 18px; vertical-align:middle">
+                            <div class="cd-actions">
+                                <button onclick="deleteRecipe({{ recipe.id }})" class="cd-btn cd-btn--sm cd-btn--quiet cd-btn--reject">Delete</button>
+                                <button onclick="runRecipe({{ recipe.id }})" id="recipe-run-{{ recipe.id }}" class="cd-btn cd-btn--sm">Run</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="cd-card-pad cd-muted" style="margin:0">A recipe combines several candidates, and any pasted sources, into one article. Choose New recipe to make one.</p>
+            {% endif %}
+        </details>
+        {% endif %}
+    </div>
+
+    <nav class="cd-bar" aria-label="Filter articles">
+        <div class="cd-tabs">
+            {% for key, label in [('staged', 'In review'), ('approved', 'Approved'), ('published', 'Published'), ('rejected', 'Rejected'), ('all', 'All')] %}
+            <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status=key) }}"
+               class="cd-tab {% if status == key %}is-active{% endif %}"
+               {% if status == key %}aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
-        </select>
-    </div>
-</div>
+        </div>
+    </nav>
 
-{% if briefing %}
-<details class="mb-6 bg-white shadow-md rounded-lg overflow-hidden group">
-    <summary class="px-5 py-4 cursor-pointer flex justify-between items-center hover:bg-gray-50">
-        <div class="flex items-center space-x-3">
-            <svg class="w-4 h-4 text-gray-400 transform transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
-            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
-            <span class="text-xs text-gray-500">{{ briefing.period_start.strftime('%b %d') }} – {{ briefing.period_end.strftime('%b %d, %Y') }}</span>
-            <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{{ briefing.candidate_count }} candidates</span>
-        </div>
-        <button onclick="event.preventDefault(); regenerateBriefing()" id="regen-briefing-btn"
-                class="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300" title="Regenerate">
-            Regenerate
-        </button>
-    </summary>
-    <div class="px-5 pb-4 text-sm text-gray-700 leading-relaxed whitespace-pre-line border-t border-gray-100 pt-3">{{ briefing.summary }}</div>
-</details>
-{% elif current_publication %}
-<div class="mb-6 bg-white shadow-md rounded-lg overflow-hidden">
-    <div class="px-5 py-4 flex justify-between items-center">
-        <div>
-            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Weekly Briefing</h3>
-            <p class="text-xs text-gray-400 mt-1">No briefing generated yet</p>
-        </div>
-        <button onclick="regenerateBriefing()" id="regen-briefing-btn"
-                class="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-            Generate Now
-        </button>
-    </div>
-</div>
-{% endif %}
-
-{% if current_publication %}
-<details class="mb-6 bg-white shadow-md rounded-lg overflow-hidden group">
-    <summary class="px-5 py-4 cursor-pointer flex justify-between items-center hover:bg-gray-50">
-        <div class="flex items-center space-x-3">
-            <svg class="w-4 h-4 text-gray-400 transform transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
-            <h3 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Content Recipes</h3>
-            <span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{{ recipes|length }} saved</span>
-        </div>
-        <button onclick="event.preventDefault(); openRecipeModal()"
-                class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
-            New Recipe
-        </button>
-    </summary>
-    <div class="border-t border-gray-100">
-        {% if recipes %}
-        <table class="min-w-full text-sm">
-            <tbody class="divide-y divide-gray-100">
-                {% for recipe in recipes %}
-                <tr id="recipe-row-{{ recipe.id }}" class="hover:bg-gray-50">
-                    <td class="px-5 py-3">
-                        <div class="font-medium text-gray-900">{{ recipe.name }}</div>
-                        <div class="text-xs text-gray-500">
-                            {{ recipe.candidates|length }} candidate{{ '' if recipe.candidates|length == 1 else 's' }}
-                            {% if recipe.static_sources|length %} · {{ recipe.static_sources|length }} static source{{ '' if recipe.static_sources|length == 1 else 's' }}{% endif %}
-                            {% if recipe.author_profile %} · {{ recipe.author_profile.name }}{% endif %}
-                            {% if recipe.last_run_at %} · last run {{ recipe.last_run_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
-                        </div>
+    <div class="cd-panel">
+        {% if content.items %}
+        <table class="cd-table" style="min-width:720px">
+            <thead>
+                <tr>
+                    <th style="width:58%">{{ sort_header('Article', 'title') }}</th>
+                    <th>{{ sort_header('Source', 'source') }}</th>
+                    <th>{{ sort_header('Status', 'status') }}</th>
+                    <th>{{ sort_header('Written', 'date', default_desc=true) }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in content.items %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('main.view_content', id=item.id) }}" class="cd-headline">{{ item.title }}</a>
+                        {% if item.deck %}<p class="cd-snippet">{{ item.deck }}</p>{% endif %}
                     </td>
-                    <td class="px-5 py-3 text-right whitespace-nowrap space-x-1">
-                        <button onclick="runRecipe({{ recipe.id }})" id="recipe-run-{{ recipe.id }}"
-                                class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600">
-                            Run
-                        </button>
-                        <button onclick="deleteRecipe({{ recipe.id }})"
-                                class="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
-                            Delete
-                        </button>
-                    </td>
+                    <td class="cd-meta cd-col-source">{{ item.source_name or '—' }}</td>
+                    <td><span class="cd-status cd-status--{{ item.status }}">{{ content_status(item.status) }}</span></td>
+                    <td class="cd-meta num" style="white-space:nowrap">{{ item.created_at.strftime('%b %-d') }}<span class="cd-meta-sub">{{ item.created_at.strftime('%H:%M') }}</span></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <p class="px-5 py-4 text-sm text-gray-400">No recipes yet. Click "New Recipe" to combine multiple candidates into one article.</p>
-        {% endif %}
-    </div>
-</details>
-{% endif %}
 
-<div class="mb-6 flex space-x-2">
-    <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='all') }}"
-       class="px-4 py-2 rounded {% if status == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        All
-    </a>
-    <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='staged') }}"
-       class="px-4 py-2 rounded {% if status == 'staged' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Staged
-    </a>
-    <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='approved') }}"
-       class="px-4 py-2 rounded {% if status == 'approved' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Approved
-    </a>
-    <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='published') }}"
-       class="px-4 py-2 rounded {% if status == 'published' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Published
-    </a>
-    <a href="{{ url_for('main.dashboard', publication_id=current_publication.id if current_publication else None, status='rejected') }}"
-       class="px-4 py-2 rounded {% if status == 'rejected' %}bg-blue-600 text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
-        Rejected
-    </a>
-</div>
-
-<div class="bg-white shadow-md rounded-lg overflow-hidden">
-    {% if content.items %}
-    <table class="min-w-full">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Title', 'title') }}</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Source', 'source') }}</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Status', 'status') }}</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ sort_header('Date', 'date', default_desc=true) }}</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-            {% for item in content.items %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4">
-                    <a href="{{ url_for('main.view_content', id=item.id) }}" class="text-blue-600 hover:underline">
-                        {{ item.title[:80] }}{% if item.title|length > 80 %}...{% endif %}
-                    </a>
-                </td>
-                <td class="px-6 py-4 text-sm text-gray-500">{{ item.source_name or 'N/A' }}</td>
-                <td class="px-6 py-4">
-                    <span class="px-2 py-1 text-xs rounded-full
-                        {% if item.status == 'staged' %}bg-yellow-100 text-yellow-800
-                        {% elif item.status == 'approved' %}bg-green-100 text-green-800
-                        {% elif item.status == 'published' %}bg-blue-100 text-blue-800
-                        {% elif item.status == 'rejected' %}bg-red-100 text-red-800
-                        {% endif %}">
-                        {{ item.status }}
-                    </span>
-                </td>
-                <td class="px-6 py-4 text-sm text-gray-500">{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td class="px-6 py-4 text-sm">
-                    <a href="{{ url_for('main.view_content', id=item.id) }}"
-                       class="text-blue-600 hover:underline">View</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <div class="px-6 py-4 bg-gray-50 border-t">
-        <div class="flex justify-between items-center">
-            <div class="text-sm text-gray-600">
-                Showing {{ content.items|length }} of {{ content.total }} items
-            </div>
-            <div class="flex space-x-2">
+        <div class="cd-foot">
+            <span class="num">
+                {% set first = (content.page - 1) * content.per_page + 1 %}
+                {{ first }}–{{ first + content.items|length - 1 }} of {{ content.total }}
+            </span>
+            <div style="display:flex; gap:8px">
                 {% if content.has_prev %}
                 <a href="{{ url_for('main.dashboard', page=content.prev_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction) }}"
-                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Previous</a>
+                   class="cd-btn cd-btn--sm">Previous</a>
                 {% endif %}
                 {% if content.has_next %}
                 <a href="{{ url_for('main.dashboard', page=content.next_num, status=status, publication_id=current_publication.id if current_publication else None, sort=sort, direction=direction) }}"
-                   class="px-3 py-1 bg-white border rounded hover:bg-gray-100">Next</a>
+                   class="cd-btn cd-btn--sm">Next</a>
                 {% endif %}
             </div>
         </div>
+        {% else %}
+        <div class="cd-empty">
+            <h2>No articles here</h2>
+            <p>Try another status, or write one from a candidate or a link.</p>
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <div class="px-6 py-12 text-center text-gray-500">
-        No news content found.
-    </div>
-    {% endif %}
 </div>
 
 <!-- Hidden forms for workflow submission -->
@@ -255,154 +205,120 @@
 </form>
 {% endif %}
 
-<!-- Author Selection Modal -->
-<div id="authorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Select Author Voice</h3>
-        </div>
-        <div class="px-6 py-4">
-            {% if author_profiles %}
-            <div class="space-y-3 max-h-64 overflow-y-auto">
-                {% for profile in author_profiles %}
-                <label class="flex items-start p-3 rounded border cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input type="radio" name="modal_author" value="{{ profile.id }}"
-                           {% if profile.is_default %}checked{% endif %}
-                           class="mt-1 mr-3">
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center space-x-2">
-                            <span class="font-medium text-gray-900">{{ profile.name }}</span>
-                            {% if profile.is_default %}
-                            <span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Default</span>
+<!-- Author voice dialog -->
+<div id="authorModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="authorModalTitle">
+    <div class="cd-dialog">
+        <div class="cd-dialog-body">
+            <h3 id="authorModalTitle">Choose an author voice</h3>
+            <div style="margin-top:16px">
+                {% if author_profiles %}
+                <div style="display:grid; gap:8px; max-height:300px; overflow-y:auto">
+                    {% for profile in author_profiles %}
+                    <label class="cd-voice">
+                        <input type="radio" name="modal_author" value="{{ profile.id }}"
+                               {% if profile.is_default %}checked{% endif %}>
+                        <span style="min-width:0">
+                            <span style="font-weight:600">{{ profile.name }}</span>{% if profile.is_default %}<span class="cd-tag">Default</span>{% endif %}{% if not profile.style_guide %}<span class="cd-tag">No style guide</span>{% endif %}
+                            {% if profile.style_guide %}
+                            <span style="display:block; margin-top:3px; font-size:12.5px; color:var(--muted)">{{ profile.style_guide[:120] }}…</span>
                             {% endif %}
-                            {% if not profile.style_guide %}
-                            <span class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">No guide</span>
-                            {% endif %}
-                        </div>
-                        {% if profile.style_guide %}
-                        <p class="text-xs text-gray-500 mt-1">{{ profile.style_guide[:120] }}...</p>
-                        {% endif %}
-                    </div>
-                </label>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-sm text-gray-500">No author profiles configured. Content will be generated without a specific voice.</p>
-            {% endif %}
-        </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="hideAuthorModal()"
-                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
-                Cancel
-            </button>
-            <button onclick="submitWithAuthor()" id="author-modal-submit"
-                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                Continue
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Content Recipe Modal -->
-{% if current_publication %}
-<div id="recipeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Create Content Recipe</h3>
-            <p class="text-sm text-gray-500 mt-1">Combine multiple candidates into a single article.</p>
-        </div>
-        <div class="px-6 py-4 overflow-y-auto space-y-5">
-            <div>
-                <label for="recipe-name" class="block text-sm font-medium text-gray-700 mb-1">Recipe name</label>
-                <input type="text" id="recipe-name" placeholder="e.g. Weekly regulatory roundup"
-                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-            </div>
-
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Candidates <span class="text-gray-400">(select at least one)</span></label>
-                {% if recipe_candidates_list %}
-                <div class="space-y-2 max-h-56 overflow-y-auto border border-gray-200 rounded-md p-2">
-                    {% for c in recipe_candidates_list %}
-                    <label class="flex items-start p-2 rounded cursor-pointer hover:bg-gray-50">
-                        <input type="checkbox" name="recipe_candidate" value="{{ c.id }}" class="mt-1 mr-3">
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center space-x-2">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
-                                    {% if c.relevance_score >= 70 %}bg-green-100 text-green-800
-                                    {% elif c.relevance_score >= 40 %}bg-yellow-100 text-yellow-800
-                                    {% else %}bg-red-100 text-red-800{% endif %}">{{ "%.0f"|format(c.relevance_score) }}</span>
-                                <span class="text-sm text-gray-900 truncate">{{ (c.title or c.url)[:90] }}</span>
-                            </div>
-                        </div>
+                        </span>
                     </label>
                     {% endfor %}
                 </div>
                 {% else %}
-                <p class="text-sm text-gray-500">No candidates available (status new/selected) for this publication.</p>
+                <p style="margin:0; color:var(--muted); font-size:13.5px">This publication has no author voices yet, so the article uses the default style.</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="cd-dialog-foot">
+            <button onclick="hideAuthorModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitWithAuthor()" id="author-modal-submit" class="cd-btn cd-btn--solid">Write article</button>
+        </div>
+    </div>
+</div>
+
+<!-- Recipe dialog -->
+{% if current_publication %}
+<div id="recipeModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="recipeModalTitle">
+    <div class="cd-dialog" style="max-width:640px; max-height:90vh; display:flex; flex-direction:column">
+        <div class="cd-dialog-body" style="padding-bottom:14px; border-bottom:1px solid var(--line)">
+            <h3 id="recipeModalTitle">New recipe</h3>
+            <p class="cd-dialog-sub">Combine several candidates, and any pasted sources, into one article.</p>
+        </div>
+        <div style="padding:18px 22px; overflow-y:auto; display:grid; gap:20px">
+            <div>
+                <label for="recipe-name" class="cd-label">Name</label>
+                <input type="text" id="recipe-name" class="cd-input" placeholder="For example: Weekly regulatory roundup">
+            </div>
+
+            <div>
+                <span class="cd-label">Candidates</span>
+                {% if recipe_candidates_list %}
+                <div class="cd-picklist">
+                    {% for c in recipe_candidates_list %}
+                    <label class="cd-pick">
+                        <input type="checkbox" name="recipe_candidate" value="{{ c.id }}">
+                        <span class="cd-pick-score num">{{ "%.0f"|format(c.relevance_score or 0) }}</span>
+                        <span style="min-width:0; font-size:13.5px">{{ (c.title or c.url)[:110] }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="cd-muted" style="margin:0; font-size:13.5px">This publication has no new or selected candidates.</p>
                 {% endif %}
             </div>
 
             <div>
-                <div class="flex items-center justify-between mb-1">
-                    <label class="block text-sm font-medium text-gray-700">Static sources <span class="text-gray-400">(optional)</span></label>
-                    <button type="button" onclick="toggleStaticSourceForm()" id="add-source-toggle"
-                            class="text-xs text-indigo-600 hover:text-indigo-800">+ Add new</button>
+                <div class="cd-row" style="margin-bottom:6px">
+                    <span class="cd-label" style="margin:0">Pasted sources <span class="cd-muted">(optional)</span></span>
+                    <span class="cd-spacer"></span>
+                    <button type="button" onclick="toggleStaticSourceForm()" id="add-source-toggle" class="cd-link-btn">Paste a source</button>
                 </div>
-                <div id="static-source-list" class="space-y-2 max-h-40 overflow-y-auto {% if not static_sources %}hidden{% endif %} border border-gray-200 rounded-md p-2">
+                <div id="static-source-list" class="cd-picklist {% if not static_sources %}hidden{% endif %}" style="max-height:160px">
                     {% for s in static_sources %}
-                    <label class="flex items-center justify-between p-2 rounded hover:bg-gray-50" data-source-row="{{ s.id }}">
-                        <span class="flex items-center min-w-0">
-                            <input type="checkbox" name="recipe_static_source" value="{{ s.id }}" class="mr-3">
-                            <span class="text-sm text-gray-900 truncate">{{ s.name }}</span>
-                        </span>
+                    <label class="cd-pick" data-source-row="{{ s.id }}">
+                        <input type="checkbox" name="recipe_static_source" value="{{ s.id }}">
+                        <span class="truncate" style="flex:1; min-width:0; font-size:13.5px">{{ s.name }}</span>
                         <a href="{{ url_for('main.delete_static_source', source_id=s.id) }}" onclick="event.preventDefault(); deleteStaticSource({{ s.id }})"
-                           class="text-xs text-red-500 hover:text-red-700 ml-2 whitespace-nowrap">Delete</a>
+                           class="cd-link-btn cd-link-danger" style="font-size:12.5px">Delete</a>
                     </label>
                     {% endfor %}
                 </div>
-                <div id="static-source-form" class="hidden mt-2 space-y-2 border border-indigo-200 rounded-md p-3 bg-indigo-50">
-                    <input type="text" id="new-source-name" placeholder="Source name (e.g. Smith interview transcript)"
-                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <textarea id="new-source-content" rows="5" placeholder="Paste the transcript / source text here..."
-                              class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-                    <div class="flex justify-end space-x-2">
-                        <button type="button" onclick="toggleStaticSourceForm()" class="px-3 py-1.5 text-xs text-gray-700 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-                        <button type="button" onclick="addStaticSource()" id="save-source-btn" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">Save source</button>
+                <div id="static-source-form" class="hidden"><div class="cd-panel-soft" style="display:grid; gap:8px">
+                    <input type="text" id="new-source-name" class="cd-input" placeholder="Name, for example: Smith interview transcript">
+                    <textarea id="new-source-content" rows="5" class="cd-textarea" placeholder="Paste the transcript or source text"></textarea>
+                    <div class="cd-row" style="justify-content:flex-end">
+                        <button type="button" onclick="toggleStaticSourceForm()" class="cd-btn cd-btn--sm cd-btn--quiet">Cancel</button>
+                        <button type="button" onclick="addStaticSource()" id="save-source-btn" class="cd-btn cd-btn--sm cd-btn--solid">Save source</button>
                     </div>
-                </div>
+                </div></div>
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Author voice <span class="text-gray-400">(optional)</span></label>
-                <div class="space-y-2 max-h-40 overflow-y-auto">
-                    <label class="flex items-center p-2 rounded border cursor-pointer hover:bg-gray-50">
-                        <input type="radio" name="recipe_author" value="" checked class="mr-3">
-                        <span class="text-sm text-gray-700">No specific voice</span>
+                <span class="cd-label">Author voice <span class="cd-muted">(optional)</span></span>
+                <div style="display:grid; gap:8px">
+                    <label class="cd-voice">
+                        <input type="radio" name="recipe_author" value="" checked>
+                        <span>No specific voice</span>
                     </label>
                     {% for profile in author_profiles %}
-                    <label class="flex items-start p-2 rounded border cursor-pointer hover:bg-gray-50">
-                        <input type="radio" name="recipe_author" value="{{ profile.id }}" class="mt-1 mr-3">
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center space-x-2">
-                                <span class="font-medium text-gray-900">{{ profile.name }}</span>
-                                {% if profile.is_default %}<span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Default</span>{% endif %}
-                                {% if not profile.style_guide %}<span class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">No guide</span>{% endif %}
-                            </div>
-                        </div>
+                    <label class="cd-voice">
+                        <input type="radio" name="recipe_author" value="{{ profile.id }}">
+                        <span><span style="font-weight:600">{{ profile.name }}</span>{% if profile.is_default %}<span class="cd-tag">Default</span>{% endif %}{% if not profile.style_guide %}<span class="cd-tag">No style guide</span>{% endif %}</span>
                     </label>
                     {% endfor %}
                 </div>
             </div>
 
             <div>
-                <label for="recipe-overrides" class="block text-sm font-medium text-gray-700 mb-1">Style / instruction overrides <span class="text-gray-400">(optional)</span></label>
-                <textarea id="recipe-overrides" rows="3" placeholder="e.g. Lead with the regulatory angle; keep under 600 words."
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"></textarea>
+                <label for="recipe-overrides" class="cd-label">Extra instructions <span class="cd-muted">(optional)</span></label>
+                <textarea id="recipe-overrides" rows="3" class="cd-textarea" placeholder="For example: lead with the regulatory angle and keep it under 600 words"></textarea>
             </div>
         </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg border-t">
-            <button onclick="closeRecipeModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-            <button onclick="submitRecipe()" id="recipe-submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Create &amp; Generate</button>
+        <div class="cd-dialog-foot" style="border-top:1px solid var(--line); padding-top:14px">
+            <button onclick="closeRecipeModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitRecipe()" id="recipe-submit" class="cd-btn cd-btn--solid">Save and write article</button>
         </div>
     </div>
 </div>
@@ -422,17 +338,17 @@ function showWorkflowStatus(status, message, isComplete = false) {
     const messageEl = document.getElementById('workflow-message');
     const spinner = document.getElementById('workflow-spinner');
 
-    banner.classList.remove('hidden', 'bg-blue-600', 'bg-green-600', 'bg-red-600');
+    banner.classList.remove('hidden', 'is-working', 'is-done', 'is-error');
     messageEl.textContent = message;
 
     if (status === 'running' || status === 'pending') {
-        banner.classList.add('bg-blue-600', 'text-white');
+        banner.classList.add('is-working');
         spinner.classList.remove('hidden');
     } else if (status === 'completed') {
-        banner.classList.add('bg-green-600', 'text-white');
+        banner.classList.add('is-done');
         spinner.classList.add('hidden');
     } else if (status === 'failed') {
-        banner.classList.add('bg-red-600', 'text-white');
+        banner.classList.add('is-error');
         spinner.classList.add('hidden');
     }
 }
@@ -601,12 +517,11 @@ function addStaticSource() {
             const list = document.getElementById('static-source-list');
             list.classList.remove('hidden');
             const label = document.createElement('label');
-            label.className = 'flex items-center justify-between p-2 rounded hover:bg-gray-50';
+            label.className = 'cd-pick';
             label.setAttribute('data-source-row', data.id);
-            label.innerHTML = '<span class="flex items-center min-w-0">'
-                + '<input type="checkbox" name="recipe_static_source" value="' + data.id + '" class="mr-3" checked>'
-                + '<span class="text-sm text-gray-900 truncate"></span></span>'
-                + '<a href="#" class="text-xs text-red-500 hover:text-red-700 ml-2 whitespace-nowrap">Delete</a>';
+            label.innerHTML = '<input type="checkbox" name="recipe_static_source" value="' + data.id + '" checked>'
+                + '<span class="truncate" style="flex:1; min-width:0; font-size:13.5px"></span>'
+                + '<a href="#" class="cd-link-btn cd-link-danger" style="font-size:12.5px">Delete</a>';
             label.querySelector('span.truncate').textContent = data.name;
             label.querySelector('a').addEventListener('click', function(e) { e.preventDefault(); deleteStaticSource(data.id); });
             list.appendChild(label);
@@ -674,7 +589,7 @@ function submitRecipe() {
 
     const btn = document.getElementById('recipe-submit');
     btn.disabled = true;
-    btn.textContent = 'Generating...';
+    btn.textContent = 'Sending…';
     btn.classList.add('opacity-50', 'cursor-not-allowed');
 
     fetch(recipeCreateUrl, {
@@ -701,14 +616,14 @@ function submitRecipe() {
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));
             btn.disabled = false;
-            btn.textContent = 'Create & Generate';
+            btn.textContent = 'Save and write article';
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
         }
     })
     .catch(err => {
         alert('Error: ' + err);
         btn.disabled = false;
-        btn.textContent = 'Create & Generate';
+        btn.textContent = 'Save and write article';
         btn.classList.remove('opacity-50', 'cursor-not-allowed');
     });
 }

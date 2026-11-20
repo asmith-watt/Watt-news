@@ -1,540 +1,346 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="max-w-4xl mx-auto">
-    <div class="mb-4">
-        <a href="{{ url_for('main.dashboard') }}" class="text-blue-600 hover:underline">&larr; Back to Dashboard</a>
-    </div>
+{% macro content_status(s) -%}
+    {%- if s == 'staged' -%}In review{%- elif s == 'approved' -%}Approved{%- elif s == 'published' -%}Published{%- elif s == 'rejected' -%}Rejected{%- else -%}{{ s }}{%- endif -%}
+{%- endmacro %}
 
-    <div class="bg-white shadow-md rounded-lg overflow-hidden">
-        <div class="px-6 py-4 bg-gray-50 border-b">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-800">{{ content.title }}</h1>
-                    <div class="mt-2 flex items-center space-x-4 text-sm text-gray-600">
-                        <span>Status:
-                            <span class="px-2 py-1 text-xs rounded-full
-                                {% if content.status == 'staged' %}bg-yellow-100 text-yellow-800
-                                {% elif content.status == 'approved' %}bg-green-100 text-green-800
-                                {% elif content.status == 'published' %}bg-blue-100 text-blue-800
-                                {% elif content.status == 'rejected' %}bg-red-100 text-red-800
-                                {% endif %}">
-                                {{ content.status }}
-                            </span>
-                        </span>
-                        {% if content.author %}
-                        <span>Author: {{ content.author }}</span>
+{% block content %}
+<div class="cd cd-proof">
+    <a href="{{ url_for('main.dashboard', publication_id=content.publication_id) }}" class="cd-back">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
+        Content production
+    </a>
+
+    <header>
+        <h1 class="cd-proof-title">{{ content.title }}</h1>
+        <div class="cd-proof-meta">
+            <span class="cd-status cd-status--{{ content.status }}">{{ content_status(content.status) }}</span>
+            {% if content.author %}<span>By <b>{{ content.author }}</b></span>{% endif %}
+            {% if content.source_name %}<span>From <b>{{ content.source_name }}</b></span>{% endif %}
+            <span class="num">Written {{ content.created_at.strftime('%b %-d, %Y at %H:%M') }}</span>
+        </div>
+        {% if not content.pushed_to_cms %}
+        <div class="cd-proof-actions">
+            <button onclick="showApproveModal()" class="cd-btn cd-btn--select">Approve</button>
+            <button onclick="showRejectModal()" class="cd-btn cd-btn--reject">Reject</button>
+            {% if content.versions|length == 0 %}
+            <button onclick="pushToCMS()" class="cd-btn cd-btn--solid">Send to CMS</button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </header>
+
+    {% if content.status == 'rejected' and content.rejection_reason %}
+    <div class="cd-callout cd-callout--reject" style="margin-top:18px">
+        <h3 style="margin:0 0 4px; font-size:13px; font-weight:600">Why it was rejected</h3>
+        <p style="margin:0; white-space:pre-wrap">{{ content.rejection_reason }}</p>
+    </div>
+    {% elif content.status == 'approved' and content.rejection_reason %}
+    <div class="cd-callout cd-callout--approve" style="margin-top:18px">
+        <h3 style="margin:0 0 4px; font-size:13px; font-weight:600">Approval note</h3>
+        <p style="margin:0; white-space:pre-wrap">{{ content.rejection_reason }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Featured image (shared across all versions) -->
+    <section id="imageSection" style="margin-top:24px">
+        {% if content.image_thumbnail or content.image_url %}
+        <figure class="cd-figure">
+            <img id="contentImage" src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}">
+        </figure>
+        <div class="cd-figure-bar">
+            <button onclick="generateImage()" id="generateImageBtn" class="cd-btn cd-btn--sm">Make a new image</button>
+            {% if content.image_url %}
+            <a href="{{ content.image_url }}" target="_blank" download class="cd-btn cd-btn--sm cd-btn--quiet">Download full size</a>
+            {% endif %}
+        </div>
+        {% else %}
+        <div id="noImagePlaceholder" class="cd-noimage">
+            <span>This article has no featured image yet.</span>
+            <button onclick="generateImage()" id="generateImageBtn" class="cd-btn cd-btn--sm">Make an image</button>
+        </div>
+        {% endif %}
+        <div id="imageStatus" class="cd-notice hidden" style="margin-top:10px" role="status"></div>
+    </section>
+
+    {% if content.versions|length > 0 %}
+    <!-- Versions -->
+    <section style="margin-top:32px">
+        <div class="cd-row" style="margin-bottom:6px">
+            <h2 class="cd-h2">Drafts</h2>
+            <span class="cd-count">{{ content.versions|length }} from different models</span>
+            <span class="cd-spacer"></span>
+            <button onclick="triggerAudit()" id="auditBtn" class="cd-btn cd-btn--sm">Fact-check and fix</button>
+        </div>
+        <div id="auditStatus" class="cd-notice hidden" style="margin:8px 0" role="status"></div>
+
+        <nav class="cd-vtabs" aria-label="Drafts">
+            {% for version in content.versions %}
+            <button onclick="selectVersionTab({{ version.id }})"
+                    id="version-tab-{{ version.id }}"
+                    class="version-tab cd-vtab {% if version.id == content.selected_version_id %}is-active{% endif %}">
+                {% if version.is_final %}<span class="cd-vtab-final" title="Final draft">&#9733;</span>{% endif %}
+                {{ version.ai_provider|title }}
+                {% if version.quality_score %}<span class="cd-vtab-score num" title="Quality score">{{ version.quality_score|round(1) }}</span>{% endif %}
+                {% if version.pushed_to_cms %}<span class="cd-vtab-mark" style="color:var(--field)" title="Sent to CMS">&#10003;</span>{% endif %}
+                <span id="audit-badge-{{ version.id }}" class="hidden px-1.5 py-0.5"></span>
+                <span id="patched-badge-{{ version.id }}" class="hidden cd-vtab-mark" style="color:var(--slate)" title="Has a fixed draft">&#9998;</span>
+            </button>
+            {% endfor %}
+        </nav>
+
+        {% for version in content.versions %}
+        <div id="version-panel-{{ version.id }}"
+             class="version-panel {% if version.id != content.selected_version_id %}hidden{% endif %}">
+
+            <!-- Draft toolbar -->
+            <div class="cd-vbar">
+                <div class="cd-vbar-info">
+                    {% if version.is_final %}<span class="cd-flag cd-flag--final">Final</span>{% endif %}
+                    {% if version.id == content.selected_version_id %}<span class="cd-flag cd-flag--primary">Primary</span>{% endif %}
+                    <b>{{ version.ai_provider|title }}</b>
+                    {% if version.ai_model %}<span class="cd-muted">{{ version.ai_model }}</span>{% endif %}
+                    {% if version.quality_score %}<span class="num">Quality {{ version.quality_score|round(1) }}</span>{% endif %}
+                </div>
+                <div class="cd-row">
+                    <button onclick="toggleEditMode({{ version.id }})" id="edit-btn-{{ version.id }}" class="cd-btn cd-btn--sm">Edit</button>
+                    {% if version.is_final %}
+                    <button onclick="toggleRevisePanel({{ version.id }})" id="revise-btn-{{ version.id }}" class="cd-btn cd-btn--sm">Revise with AI</button>
+                    {% endif %}
+                    {% if version.id != content.selected_version_id %}
+                    <button onclick="setSelectedVersion({{ version.id }})" class="cd-btn cd-btn--sm cd-btn--quiet">Make primary</button>
+                    {% endif %}
+                    {% if not version.pushed_to_cms %}
+                    <button onclick="pushVersionToCMS({{ version.id }})" class="cd-btn cd-btn--sm cd-btn--solid">Send to CMS</button>
+                    {% else %}
+                    <span class="cd-flag cd-flag--ok" title="Sent {{ version.pushed_at.strftime('%b %-d, %H:%M') if version.pushed_at else '' }}">Sent to CMS</span>
+                    {% endif %}
+                    {% if content.publication.ghost_url and content.publication.ghost_admin_api_key %}
+                        {% if not version.pushed_to_ghost %}
+                        <button onclick="pushVersionToGhost({{ version.id }})" class="cd-btn cd-btn--sm">Publish to Ghost</button>
+                        {% else %}
+                        <a href="{{ version.ghost_post_url }}" target="_blank" class="cd-flag cd-flag--ok"
+                           title="Published {{ version.ghost_pushed_at.strftime('%b %-d, %H:%M') if version.ghost_pushed_at else '' }}">On Ghost</a>
                         {% endif %}
-                        {% if content.source_name %}
-                        <span>Source: {{ content.source_name }}</span>
-                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Save/Cancel bar (hidden until edit mode) -->
+            <div id="edit-bar-{{ version.id }}" class="cd-editbar hidden">
+                <span>You're editing this draft.</span>
+                <div class="cd-row">
+                    <button onclick="cancelEdit({{ version.id }})" class="cd-btn cd-btn--sm cd-btn--quiet">Cancel</button>
+                    <button onclick="saveVersion({{ version.id }})" id="save-btn-{{ version.id }}" class="cd-btn cd-btn--sm cd-btn--solid">Save changes</button>
+                </div>
+            </div>
+
+            {% if version.is_final %}
+            <!-- AI revision panel (final drafts only) -->
+            <div id="revise-panel-{{ version.id }}" class="cd-panel-soft hidden">
+                <div id="revise-form-{{ version.id }}">
+                    <label for="revise-instructions-{{ version.id }}" class="cd-label">What should change?</label>
+                    <p class="cd-muted cd-small" style="margin:0 0 8px">Describe the edits in plain language. Anything you don't mention stays as written, and you'll see a preview before anything is saved.</p>
+                    <textarea id="revise-instructions-{{ version.id }}" rows="4" maxlength="4000" class="cd-textarea"
+                        placeholder="For example: tighten the first two paragraphs, cut the USDA spokesperson's quote, and mention soybeans in the deck."></textarea>
+                    <div class="cd-row" style="justify-content:flex-end; margin-top:10px">
+                        <button onclick="toggleRevisePanel({{ version.id }})" class="cd-btn cd-btn--sm cd-btn--quiet">Cancel</button>
+                        <button onclick="requestRevision({{ version.id }})" id="revise-submit-{{ version.id }}" class="cd-btn cd-btn--sm cd-btn--solid">Preview revision</button>
                     </div>
                 </div>
-                <div class="flex space-x-2">
-                    {% if not content.pushed_to_cms %}
-                    <button onclick="showApproveModal()"
-                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                        Approve
-                    </button>
-                    <button onclick="showRejectModal()"
-                            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                        Reject
-                    </button>
-                    {% if content.versions|length == 0 %}
-                    <!-- Legacy push button - only shown when no versions exist -->
-                    <button onclick="pushToCMS()"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Push to CMS
-                    </button>
-                    {% endif %}
-                    {% endif %}
+                <div id="revise-status-{{ version.id }}" class="hidden" style="font-size:13.5px"></div>
+                <div id="revise-preview-{{ version.id }}" class="hidden">
+                    <div class="cd-row" style="margin-bottom:8px">
+                        <h3 class="cd-h2">Revision preview</h3>
+                        <span class="cd-spacer"></span>
+                        <button onclick="discardRevision({{ version.id }})" class="cd-btn cd-btn--sm cd-btn--quiet">Discard</button>
+                        <button onclick="applyRevision({{ version.id }})" id="revise-apply-{{ version.id }}" class="cd-btn cd-btn--sm cd-btn--solid">Apply to this draft</button>
+                    </div>
+                    <p class="cd-small" style="margin:0 0 6px; color:var(--ink-soft)"><b style="font-weight:600">You asked:</b> <span id="revise-asked-{{ version.id }}"></span></p>
+                    <div id="revise-summary-{{ version.id }}" class="cd-card" style="padding:10px 12px; margin-bottom:12px; font-size:13.5px; white-space:pre-wrap"></div>
+                    <div id="revise-fields-{{ version.id }}" style="display:grid; gap:12px"></div>
+                    <p class="cd-muted cd-small" style="margin:12px 0 0">Applied revisions haven't been fact-checked. Run the check again if the changes are substantial.</p>
                 </div>
-            </div>
-        </div>
-
-        <div class="px-6 py-4">
-            {% if content.status == 'rejected' and content.rejection_reason %}
-            <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded">
-                <h3 class="font-bold text-red-700 mb-2">Rejection Reason</h3>
-                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
-            </div>
-            {% elif content.status == 'approved' and content.rejection_reason %}
-            <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded">
-                <h3 class="font-bold text-green-700 mb-2">Approval Reason</h3>
-                <p class="text-gray-700 whitespace-pre-wrap">{{ content.rejection_reason }}</p>
             </div>
             {% endif %}
 
-            <!-- Image Section (shared across all versions) -->
-            <div id="imageSection" class="mb-4">
-                {% if content.image_thumbnail or content.image_url %}
-                <div class="relative">
-                    <img id="contentImage" src="{{ content.image_thumbnail or content.image_url }}" alt="{{ content.title }}" class="max-w-full max-h-96 h-auto rounded">
-                    {% if content.image_url %}
-                    <a href="{{ content.image_url }}" target="_blank" download
-                       class="absolute bottom-2 right-2 px-3 py-1 bg-white bg-opacity-90 text-gray-700 text-sm rounded hover:bg-opacity-100">
-                        Download
-                    </a>
-                    {% endif %}
+            <!-- Deck -->
+            <div id="deck-block-{{ version.id }}" style="margin-top:22px;{% if not version.deck %} display:none{% endif %}">
+                <div class="version-display-{{ version.id }}">
+                    <p class="cd-deck">{{ version.deck or '' }}</p>
                 </div>
-                <div class="mt-2">
-                    <button onclick="generateImage()" id="generateImageBtn"
-                            class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
-                        Regenerate Image
-                    </button>
-                </div>
-                {% else %}
-                <div id="noImagePlaceholder" class="bg-gray-100 rounded p-8 text-center">
-                    <p class="text-gray-500 mb-4">No image available</p>
-                    <button onclick="generateImage()" id="generateImageBtn"
-                            class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
-                        Generate Image
-                    </button>
-                </div>
-                {% endif %}
-                <!-- Image generation status -->
-                <div id="imageStatus" class="hidden mt-2 p-3 rounded">
+                <div class="version-edit-{{ version.id }} hidden">
+                    <label for="edit-deck-{{ version.id }}" class="cd-fieldname">Deck</label>
+                    <textarea id="edit-deck-{{ version.id }}" rows="3" class="cd-textarea" style="font-size:16px">{{ version.deck or '' }}</textarea>
                 </div>
             </div>
 
-            <!-- Version Tabs (if multiple versions exist) -->
-            {% if content.versions|length > 0 %}
-            <div class="mb-6">
-                <!-- Version Header with Audit Button -->
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-semibold text-gray-700">Article Versions</h3>
-                    <div class="flex items-center space-x-2">
-                        <button onclick="triggerAudit()" id="auditBtn"
-                                class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700">
-                            Audit & Patch
-                        </button>
+            <!-- Article body (markdown) -->
+            <div id="content-block-{{ version.id }}" style="margin-top:22px;{% if not version.content %} display:none{% endif %}">
+                <div class="version-display-{{ version.id }}">
+                    <div class="cd-article">
+                        {{ (version.content or '')|markdown }}
                     </div>
                 </div>
-                <!-- Audit status -->
-                <div id="auditStatus" class="hidden mb-3 p-3 rounded">
+                <div class="version-edit-{{ version.id }} hidden">
+                    <label for="edit-content-{{ version.id }}" class="cd-fieldname">Article <span style="font-weight:400">(Markdown)</span></label>
+                    <textarea id="edit-content-{{ version.id }}" rows="22" class="cd-textarea is-code">{{ version.content or '' }}</textarea>
                 </div>
+            </div>
 
-                <div class="border-b border-gray-200">
-                    <nav class="flex space-x-4" aria-label="Versions">
-                        {% for version in content.versions %}
-                        <button onclick="selectVersionTab({{ version.id }})"
-                                id="version-tab-{{ version.id }}"
-                                class="version-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px
-                                    {% if version.id == content.selected_version_id %}
-                                    border-blue-600 text-blue-600
-                                    {% else %}
-                                    border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
-                                    {% endif %}">
-                            {% if version.is_final %}
-                            <span class="text-amber-600">&#9733;</span>
-                            {% endif %}
-                            {{ version.ai_provider|title }}
-                            {% if version.quality_score %}
-                            <span class="ml-1 px-1.5 py-0.5 text-xs {% if version.is_final %}bg-amber-100{% else %}bg-gray-100{% endif %} rounded">{{ version.quality_score|round(1) }}</span>
-                            {% endif %}
-                            {% if version.pushed_to_cms %}
-                            <span class="ml-1 text-green-500" title="Pushed to CMS">&#10003;</span>
-                            {% endif %}
-                            <!-- Audit indicators (populated via JS) -->
-                            <span id="audit-badge-{{ version.id }}" class="hidden ml-1 px-1.5 py-0.5 text-xs rounded"></span>
-                            <span id="patched-badge-{{ version.id }}" class="hidden ml-1 text-purple-500" title="Has patched version">&#9998;</span>
-                        </button>
-                        {% endfor %}
-                    </nav>
+            <!-- Teaser and summary -->
+            <div class="cd-packaging">
+                <div id="teaser-block-{{ version.id }}" {% if not version.teaser %}style="display:none"{% endif %}>
+                    <label for="edit-teaser-{{ version.id }}" class="cd-fieldname">Teaser</label>
+                    <div class="version-display-{{ version.id }}"><p>{{ version.teaser or '' }}</p></div>
+                    <div class="version-edit-{{ version.id }} hidden">
+                        <textarea id="edit-teaser-{{ version.id }}" rows="3" class="cd-textarea">{{ version.teaser or '' }}</textarea>
+                    </div>
                 </div>
-
-                <!-- Version Content Panels -->
-                {% for version in content.versions %}
-                <div id="version-panel-{{ version.id }}"
-                     class="version-panel mt-4 {% if version.id != content.selected_version_id %}hidden{% endif %}">
-
-                    <!-- Version Action Bar -->
-                    <div class="mb-4 p-3 {% if version.is_final %}bg-amber-50{% else %}bg-gray-50{% endif %} rounded flex items-center justify-between">
-                        <div class="text-sm text-gray-600">
-                            {% if version.is_final %}
-                            <span class="mr-2 px-2 py-0.5 bg-amber-200 text-amber-800 rounded text-xs font-semibold">
-                                FINAL
-                            </span>
-                            {% endif %}
-                            <span class="font-medium">{{ version.ai_provider|title }}</span>
-                            {% if version.ai_model %}
-                            <span class="text-gray-400">/ {{ version.ai_model }}</span>
-                            {% endif %}
-                            {% if version.quality_score %}
-                            <span class="ml-2 px-2 py-0.5 {% if version.is_final %}bg-amber-100 text-amber-800{% else %}bg-blue-100 text-blue-800{% endif %} rounded text-xs">
-                                Score: {{ version.quality_score|round(1) }}
-                            </span>
-                            {% endif %}
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button onclick="toggleEditMode({{ version.id }})"
-                                    id="edit-btn-{{ version.id }}"
-                                    class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                Edit
-                            </button>
-                            {% if version.is_final %}
-                            <button onclick="toggleRevisePanel({{ version.id }})"
-                                    id="revise-btn-{{ version.id }}"
-                                    class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
-                                Revise with AI
-                            </button>
-                            {% endif %}
-                            {% if version.id != content.selected_version_id %}
-                            <button onclick="setSelectedVersion({{ version.id }})"
-                                    class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                Set as Primary
-                            </button>
-                            {% else %}
-                            <span class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded">Primary</span>
-                            {% endif %}
-                            {% if not version.pushed_to_cms %}
-                            <button onclick="pushVersionToCMS({{ version.id }})"
-                                    class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-                                Push to CMS
-                            </button>
-                            {% else %}
-                            <span class="px-3 py-1 text-sm bg-green-100 text-green-700 rounded"
-                                  title="Pushed {{ version.pushed_at.strftime('%Y-%m-%d %H:%M') if version.pushed_at else '' }}">
-                                Pushed &#10003;
-                            </span>
-                            {% endif %}
-                            {% if content.publication.ghost_url and content.publication.ghost_admin_api_key %}
-                                {% if not version.pushed_to_ghost %}
-                                <button onclick="pushVersionToGhost({{ version.id }})"
-                                        class="px-3 py-1 text-sm bg-orange-600 text-white rounded hover:bg-orange-700">
-                                    Publish to Ghost
-                                </button>
-                                {% else %}
-                                <a href="{{ version.ghost_post_url }}" target="_blank"
-                                   class="px-3 py-1 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
-                                   title="Published {{ version.ghost_pushed_at.strftime('%Y-%m-%d %H:%M') if version.ghost_pushed_at else '' }}">
-                                    Ghost &#10003;
-                                </a>
-                                {% endif %}
-                            {% endif %}
-                        </div>
+                <div id="summary-block-{{ version.id }}" {% if not version.summary %}style="display:none"{% endif %}>
+                    <label for="edit-summary-{{ version.id }}" class="cd-fieldname">Summary</label>
+                    <div class="version-display-{{ version.id }}"><p>{{ version.summary or '' }}</p></div>
+                    <div class="version-edit-{{ version.id }} hidden">
+                        <textarea id="edit-summary-{{ version.id }}" rows="4" class="cd-textarea">{{ version.summary or '' }}</textarea>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Save/Cancel bar (hidden until edit mode) -->
-                    <div id="edit-bar-{{ version.id }}" class="hidden mb-4 p-3 bg-blue-50 border border-blue-200 rounded flex items-center justify-between">
-                        <span class="text-sm text-blue-700">Editing version</span>
-                        <div class="flex space-x-2">
-                            <button onclick="cancelEdit({{ version.id }})"
-                                    class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                Cancel
-                            </button>
-                            <button onclick="saveVersion({{ version.id }})"
-                                    id="save-btn-{{ version.id }}"
-                                    class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-                                Save
-                            </button>
-                        </div>
-                    </div>
+            <!-- Writer's notes -->
+            <div id="notes-block-{{ version.id }}" {% if not version.notes %}style="display:none"{% endif %}>
+                <div class="version-display-{{ version.id }}">
+                    <div class="cd-notes"><span class="cd-fieldname" style="white-space:normal">Notes from the AI writer</span>{{ version.notes or '' }}</div>
+                </div>
+                <div class="version-edit-{{ version.id }} hidden" style="margin-top:22px">
+                    <label for="edit-notes-{{ version.id }}" class="cd-fieldname">Notes from the AI writer</label>
+                    <textarea id="edit-notes-{{ version.id }}" rows="4" class="cd-textarea">{{ version.notes or '' }}</textarea>
+                </div>
+            </div>
 
-                    {% if version.is_final %}
-                    <!-- AI revision panel (FINAL versions only) -->
-                    <div id="revise-panel-{{ version.id }}" class="hidden mb-4 p-4 bg-purple-50 border border-purple-200 rounded">
-                        <div id="revise-form-{{ version.id }}">
-                            <label for="revise-instructions-{{ version.id }}" class="block font-bold text-gray-700 mb-1">What should change?</label>
-                            <p class="text-xs text-gray-500 mb-2">Describe the edits in plain language. Everything you don't mention is left as written. You'll see a preview before anything is saved.</p>
-                            <textarea id="revise-instructions-{{ version.id }}" rows="4" maxlength="4000"
-                                placeholder="e.g. Tighten the first two paragraphs, cut the quote from the USDA spokesperson, and make the deck mention soybeans."
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
-                            <div class="mt-2 flex justify-end space-x-2">
-                                <button onclick="toggleRevisePanel({{ version.id }})"
-                                        class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                    Cancel
-                                </button>
-                                <button onclick="requestRevision({{ version.id }})"
-                                        id="revise-submit-{{ version.id }}"
-                                        class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
-                                    Generate revision
-                                </button>
-                            </div>
-                        </div>
-                        <div id="revise-status-{{ version.id }}" class="hidden text-sm"></div>
-                        <div id="revise-preview-{{ version.id }}" class="hidden">
-                            <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-bold text-gray-700">Revision preview</h3>
-                                <div class="flex space-x-2">
-                                    <button onclick="discardRevision({{ version.id }})"
-                                            class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                        Discard
-                                    </button>
-                                    <button onclick="applyRevision({{ version.id }})"
-                                            id="revise-apply-{{ version.id }}"
-                                            class="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700">
-                                        Apply to this version
-                                    </button>
-                                </div>
-                            </div>
-                            <p class="text-sm text-gray-600 mb-1"><span class="font-medium">You asked:</span> <span id="revise-asked-{{ version.id }}"></span></p>
-                            <div id="revise-summary-{{ version.id }}" class="mb-3 p-3 bg-white border border-purple-100 rounded text-sm text-gray-700 whitespace-pre-wrap"></div>
-                            <div id="revise-fields-{{ version.id }}" class="space-y-3"></div>
-                            <p class="mt-3 text-xs text-gray-500">Applied revisions haven't been through the audit. Re-run the audit if the changes are substantial.</p>
-                        </div>
-                    </div>
+            <!-- Fact-check results (filled in by script) -->
+            <div id="audit-section-{{ version.id }}" class="cd-review hidden">
+                <button onclick="toggleAuditSection({{ version.id }})" class="cd-review-head">
+                    <span class="cd-row">
+                        <b>Fact-check</b>
+                        <span id="audit-risk-badge-{{ version.id }}"></span>
+                        <span id="audit-issue-count-{{ version.id }}" class="cd-muted" style="font-size:13px"></span>
+                    </span>
+                    <svg id="audit-chevron-{{ version.id }}" class="cd-review-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+                </button>
+                <div id="audit-content-{{ version.id }}" class="cd-review-body hidden">
+                    <p id="audit-risk-summary-{{ version.id }}" class="hidden" style="margin:0; padding:12px 16px; font-size:13.5px; color:var(--ink-soft); background:var(--wash); border-bottom:1px solid var(--line)"></p>
+                    <div id="audit-issues-{{ version.id }}" class="divide-y divide-gray-200"></div>
+                </div>
+            </div>
+
+            <!-- Fixed draft (filled in by script) -->
+            <div id="patched-section-{{ version.id }}" class="cd-review cd-review--patch hidden" style="margin-top:12px">
+                <button onclick="togglePatchedSection({{ version.id }})" class="cd-review-head">
+                    <span class="cd-row">
+                        <b>Fixed draft</b>
+                        <span id="patched-provider-{{ version.id }}" class="cd-muted" style="font-size:13px"></span>
+                    </span>
+                    <svg id="patched-chevron-{{ version.id }}" class="cd-review-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+                </button>
+                <div id="patched-content-{{ version.id }}" class="cd-review-body hidden" style="padding:16px">
+                    <div id="patched-draft-{{ version.id }}" class="cd-article" style="font-size:16px"></div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% else %}
+    <!-- Older articles without drafts -->
+    <section style="margin-top:28px">
+        {% if content.deck %}<p class="cd-deck">{{ content.deck }}</p>{% endif %}
+        {% if content.content %}
+        <div class="cd-article" style="margin-top:22px">
+            {{ content.content|markdown }}
+        </div>
+        {% endif %}
+        {% if content.teaser or content.summary %}
+        <div class="cd-packaging">
+            {% if content.teaser %}<div><span class="cd-fieldname">Teaser</span><p>{{ content.teaser }}</p></div>{% endif %}
+            {% if content.summary %}<div><span class="cd-fieldname">Summary</span><p>{{ content.summary }}</p></div>{% endif %}
+        </div>
+        {% endif %}
+        {% if content.notes %}
+        <div class="cd-notes"><span class="cd-fieldname" style="white-space:normal">Notes from the AI writer</span>{{ content.notes }}</div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <footer class="cd-facts">
+        {% if content.source_url %}
+        <div>
+            <h3>Sources</h3>
+            <ul class="cd-sources" style="margin:0; padding:0; list-style:none">
+                {% for source in content.source_url.split(' | ') %}
+                {% set url_parts = source.split(' (') %}
+                <li>
+                    {% if url_parts|length > 1 %}
+                    <a href="{{ url_parts[0] }}" target="_blank" rel="noopener">{{ url_parts[0] }}</a>
+                    <span class="cd-muted">({{ url_parts[1] }}</span>
+                    {% else %}
+                    <a href="{{ source }}" target="_blank" rel="noopener">{{ source }}</a>
                     {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
 
-                    <!-- Deck -->
-                    <div class="mb-4" id="deck-block-{{ version.id }}" {% if not version.deck %}style="display:none"{% endif %}>
-                        <div class="p-4 bg-indigo-50 rounded">
-                            <h3 class="font-bold text-gray-700 mb-2">Deck</h3>
-                            <div class="version-display-{{ version.id }}">
-                                <p class="text-gray-700 text-lg">{{ version.deck or '' }}</p>
-                            </div>
-                            <div class="version-edit-{{ version.id }} hidden">
-                                <textarea id="edit-deck-{{ version.id }}" rows="3"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">{{ version.deck or '' }}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Teaser -->
-                    <div class="mb-4" id="teaser-block-{{ version.id }}" {% if not version.teaser %}style="display:none"{% endif %}>
-                        <div class="p-4 bg-purple-50 rounded">
-                            <h3 class="font-bold text-gray-700 mb-2">Teaser</h3>
-                            <div class="version-display-{{ version.id }}">
-                                <p class="text-gray-700">{{ version.teaser or '' }}</p>
-                            </div>
-                            <div class="version-edit-{{ version.id }} hidden">
-                                <textarea id="edit-teaser-{{ version.id }}" rows="3"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ version.teaser or '' }}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Summary -->
-                    <div class="mb-4" id="summary-block-{{ version.id }}" {% if not version.summary %}style="display:none"{% endif %}>
-                        <div class="p-4 bg-blue-50 rounded">
-                            <h3 class="font-bold text-gray-700 mb-2">Summary</h3>
-                            <div class="version-display-{{ version.id }}">
-                                <p class="text-gray-700">{{ version.summary or '' }}</p>
-                            </div>
-                            <div class="version-edit-{{ version.id }} hidden">
-                                <textarea id="edit-summary-{{ version.id }}" rows="4"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ version.summary or '' }}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Content (markdown) -->
-                    <div class="mb-4" id="content-block-{{ version.id }}" {% if not version.content %}style="display:none"{% endif %}>
-                        <div class="version-display-{{ version.id }}">
-                            <div class="prose max-w-none">
-                                {{ (version.content or '')|markdown }}
-                            </div>
-                        </div>
-                        <div class="version-edit-{{ version.id }} hidden">
-                            <div class="mb-1 flex items-center justify-between">
-                                <h3 class="font-bold text-gray-700">Content <span class="text-xs font-normal text-gray-400">(markdown)</span></h3>
-                            </div>
-                            <textarea id="edit-content-{{ version.id }}" rows="20"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">{{ version.content or '' }}</textarea>
-                        </div>
-                    </div>
-
-                    <!-- Notes -->
-                    <div id="notes-block-{{ version.id }}" {% if not version.notes %}style="display:none"{% endif %}>
-                        <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                            <h3 class="font-bold text-gray-700 mb-2">AI Notes</h3>
-                            <div class="version-display-{{ version.id }}">
-                                <p class="text-gray-700 whitespace-pre-wrap">{{ version.notes or '' }}</p>
-                            </div>
-                            <div class="version-edit-{{ version.id }} hidden">
-                                <textarea id="edit-notes-{{ version.id }}" rows="4"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ version.notes or '' }}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Audit Results Section (populated via JS) -->
-                    <div id="audit-section-{{ version.id }}" class="hidden mt-6">
-                        <div class="border border-gray-200 rounded-lg overflow-hidden">
-                            <button onclick="toggleAuditSection({{ version.id }})"
-                                    class="w-full px-4 py-3 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors">
-                                <div class="flex items-center space-x-3">
-                                    <span class="font-semibold text-gray-700">Audit Results</span>
-                                    <span id="audit-risk-badge-{{ version.id }}" class="px-2 py-0.5 text-xs rounded font-medium"></span>
-                                    <span id="audit-issue-count-{{ version.id }}" class="text-sm text-gray-500"></span>
-                                </div>
-                                <svg id="audit-chevron-{{ version.id }}" class="w-5 h-5 text-gray-500 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </button>
-                            <div id="audit-content-{{ version.id }}" class="hidden">
-                                <p id="audit-risk-summary-{{ version.id }}" class="hidden px-4 py-3 text-sm text-gray-700 bg-gray-50 border-b border-gray-200"></p>
-                                <!-- Issues List -->
-                                <div id="audit-issues-{{ version.id }}" class="divide-y divide-gray-200">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Patched Version Section (populated via JS) -->
-                    <div id="patched-section-{{ version.id }}" class="hidden mt-4">
-                        <div class="border border-purple-200 rounded-lg overflow-hidden">
-                            <button onclick="togglePatchedSection({{ version.id }})"
-                                    class="w-full px-4 py-3 bg-purple-50 flex items-center justify-between hover:bg-purple-100 transition-colors">
-                                <div class="flex items-center space-x-3">
-                                    <span class="font-semibold text-purple-700">Patched Draft</span>
-                                    <span id="patched-provider-{{ version.id }}" class="text-sm text-purple-600"></span>
-                                </div>
-                                <svg id="patched-chevron-{{ version.id }}" class="w-5 h-5 text-purple-500 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </button>
-                            <div id="patched-content-{{ version.id }}" class="hidden p-4">
-                                <div id="patched-draft-{{ version.id }}" class="prose max-w-none"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        {% if content.keywords %}
+        <div>
+            <h3>Keywords</h3>
+            <div class="cd-chips">
+                {% for keyword in content.keywords.split(', ') %}
+                <span class="cd-chip">{{ keyword }}</span>
                 {% endfor %}
             </div>
-            {% else %}
-            <!-- Legacy content display (no versions) -->
-            {% if content.deck %}
-            <div class="mb-4 p-4 bg-indigo-50 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">Deck</h3>
-                <p class="text-gray-700 text-lg">{{ content.deck }}</p>
-            </div>
-            {% endif %}
+        </div>
+        {% endif %}
 
-            {% if content.teaser %}
-            <div class="mb-4 p-4 bg-purple-50 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">Teaser</h3>
-                <p class="text-gray-700">{{ content.teaser }}</p>
-            </div>
-            {% endif %}
+        <div>
+            <h3>Record</h3>
+            <dl class="cd-d-dl num" style="grid-template-columns:110px 1fr; font-size:13px">
+                <dt>Written</dt><dd>{{ content.created_at.strftime('%b %-d, %Y %H:%M') }}</dd>
+                {% if content.published_date %}<dt>Published</dt><dd>{{ content.published_date.strftime('%b %-d, %Y %H:%M') }}</dd>{% endif %}
+                {% if content.pushed_to_cms %}
+                <dt>Sent to CMS</dt><dd>{{ content.pushed_at.strftime('%b %-d, %Y %H:%M') if content.pushed_at else '' }}{% if content.pushed_by %} by {{ content.pushed_by.username }}{% endif %}</dd>
+                {% if content.cms_id %}<dt>CMS ID</dt><dd>{{ content.cms_id }}</dd>{% endif %}
+                {% endif %}
+            </dl>
+        </div>
+    </footer>
+</div>
 
-            {% if content.summary %}
-            <div class="mb-4 p-4 bg-blue-50 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">Summary</h3>
-                <p class="text-gray-700">{{ content.summary }}</p>
-            </div>
-            {% endif %}
-
-            {% if content.content %}
-            <div class="prose max-w-none">
-                {{ content.content|markdown }}
-            </div>
-            {% endif %}
-
-            {% if content.notes %}
-            <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">AI Notes</h3>
-                <p class="text-gray-700 whitespace-pre-wrap">{{ content.notes }}</p>
-            </div>
-            {% endif %}
-            {% endif %}
-
-            {% if content.keywords %}
-            <div class="mt-4 p-4 bg-gray-50 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">Keywords</h3>
-                <div class="flex flex-wrap gap-2">
-                    {% for keyword in content.keywords.split(', ') %}
-                    <span class="px-2 py-1 bg-gray-200 text-gray-700 text-sm rounded">{{ keyword }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            {% if content.source_url %}
-            <div class="mt-4 p-4 bg-gray-50 rounded">
-                <h3 class="font-bold text-gray-700 mb-2">Sources</h3>
-                <div class="space-y-2">
-                    {% for source in content.source_url.split(' | ') %}
-                    <div class="text-sm">
-                        {% set url_parts = source.split(' (') %}
-                        {% if url_parts|length > 1 %}
-                        <a href="{{ url_parts[0] }}" target="_blank" class="text-blue-600 hover:underline break-all">{{ url_parts[0] }}</a>
-                        <span class="text-gray-500 ml-2">({{ url_parts[1] }}</span>
-                        {% else %}
-                        <a href="{{ source }}" target="_blank" class="text-blue-600 hover:underline break-all">{{ source }}</a>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            <div class="mt-6 pt-6 border-t text-sm text-gray-600">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <strong>Created:</strong> {{ content.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
-                    </div>
-                    {% if content.published_date %}
-                    <div>
-                        <strong>Published:</strong> {{ content.published_date.strftime('%Y-%m-%d %H:%M:%S') }}
-                    </div>
-                    {% endif %}
-                    {% if content.pushed_to_cms %}
-                    <div>
-                        <strong>Pushed to CMS:</strong> {{ content.pushed_at.strftime('%Y-%m-%d %H:%M:%S') }} by {{ content.pushed_by.username }}
-                    </div>
-                    {% if content.cms_id %}
-                    <div>
-                        <strong>CMS ID:</strong> {{ content.cms_id }}
-                    </div>
-                    {% endif %}
-                    {% endif %}
-                </div>
-            </div>
+<!-- Reject dialog -->
+<div id="rejectModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
+    <div class="cd-dialog">
+        <div class="cd-dialog-body">
+            <h3 id="rejectModalTitle">Reject this article</h3>
+            <label for="rejectionReason" class="cd-field">Reason <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <textarea id="rejectionReason" rows="3" placeholder="For example: we already covered this, or the angle is off for our readers"></textarea>
+        </div>
+        <div class="cd-dialog-foot">
+            <button onclick="hideRejectModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitRejection()" class="cd-btn cd-btn--danger">Reject</button>
         </div>
     </div>
 </div>
 
-<!-- Rejection Modal -->
-<div id="rejectModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Reject Content</h3>
+<!-- Approve dialog -->
+<div id="approveModal" class="cd cd-dialog-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="approveModalTitle">
+    <div class="cd-dialog">
+        <div class="cd-dialog-body">
+            <h3 id="approveModalTitle">Approve this article</h3>
+            <label for="approvalReason" class="cd-field">Note <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <textarea id="approvalReason" rows="3" placeholder="Anything the next editor should know"></textarea>
         </div>
-        <div class="px-6 py-4">
-            <label for="rejectionReason" class="block text-sm font-medium text-gray-700 mb-2">
-                Rejection Reason (optional)
-            </label>
-            <textarea id="rejectionReason" rows="4"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="Enter the reason for rejection..."></textarea>
-        </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="hideRejectModal()"
-                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
-                Cancel
-            </button>
-            <button onclick="submitRejection()"
-                class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                Reject
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Approval Modal -->
-<div id="approveModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-bold text-gray-800">Approve Content</h3>
-        </div>
-        <div class="px-6 py-4">
-            <label for="approvalReason" class="block text-sm font-medium text-gray-700 mb-2">
-                Approval Reason (optional)
-            </label>
-            <textarea id="approvalReason" rows="4"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Enter the reason for approval..."></textarea>
-        </div>
-        <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="hideApproveModal()"
-                class="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
-                Cancel
-            </button>
-            <button onclick="submitApproval()"
-                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                Approve
-            </button>
+        <div class="cd-dialog-foot">
+            <button onclick="hideApproveModal()" class="cd-btn cd-btn--quiet">Cancel</button>
+            <button onclick="submitApproval()" class="cd-btn cd-btn--approve">Approve</button>
         </div>
     </div>
 </div>
@@ -786,21 +592,15 @@ function resetImageButton() {
     btn.classList.remove('opacity-50', 'cursor-not-allowed');
     // Check if we have an image to determine button text
     const hasImage = document.getElementById('contentImage') !== null;
-    btn.textContent = hasImage ? 'Regenerate Image' : 'Generate Image';
+    btn.textContent = hasImage ? 'Make a new image' : 'Make an image';
 }
 
 // Version Tab Functions
 function selectVersionTab(versionId) {
     // Update tab styling
-    document.querySelectorAll('.version-tab').forEach(tab => {
-        tab.classList.remove('border-blue-600', 'text-blue-600');
-        tab.classList.add('border-transparent', 'text-gray-500');
-    });
+    document.querySelectorAll('.version-tab').forEach(tab => tab.classList.remove('is-active'));
     const selectedTab = document.getElementById('version-tab-' + versionId);
-    if (selectedTab) {
-        selectedTab.classList.remove('border-transparent', 'text-gray-500');
-        selectedTab.classList.add('border-blue-600', 'text-blue-600');
-    }
+    if (selectedTab) selectedTab.classList.add('is-active');
 
     // Show/hide content panels
     document.querySelectorAll('.version-panel').forEach(panel => {
@@ -908,7 +708,7 @@ function triggerAudit() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            btn.textContent = 'Auditing...';
+            btn.textContent = 'Checking…';
             statusDiv.innerHTML = '<span class="text-yellow-800">Auditing and patching versions... This may take a few minutes.</span>';
             // Start polling for status
             startAuditPolling(data.workflow_id);
@@ -977,7 +777,7 @@ function resetAuditButton() {
     if (btn) {
         btn.disabled = false;
         btn.classList.remove('opacity-50', 'cursor-not-allowed');
-        btn.textContent = 'Audit & Patch';
+        btn.textContent = 'Fact-check and fix';
     }
 }
 
@@ -1046,7 +846,8 @@ function renderAuditData() {
         // Update risk badge in section
         const riskBadge = document.getElementById('audit-risk-badge-' + versionId);
         if (riskBadge) {
-            riskBadge.textContent = (latestAudit.overall_risk || 'unknown').toUpperCase();
+            const risk = (latestAudit.overall_risk || 'unknown').replace('-', ' to ');
+            riskBadge.textContent = risk.charAt(0).toUpperCase() + risk.slice(1) + ' risk';
             riskBadge.className = 'px-2 py-0.5 text-xs rounded font-medium ' + getRiskBadgeClass(latestAudit.overall_risk);
         }
 
@@ -1272,13 +1073,13 @@ function saveVersion(versionId) {
         } else {
             alert('Error: ' + result.error);
             saveBtn.disabled = false;
-            saveBtn.textContent = 'Save';
+            saveBtn.textContent = 'Save changes';
         }
     })
     .catch(error => {
         alert('Error: ' + error);
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
+        saveBtn.textContent = 'Save changes';
     });
 }
 
@@ -1412,7 +1213,7 @@ function applyRevision(versionId) {
             } else {
                 alert('Error: ' + data.error);
                 btn.disabled = false;
-                btn.textContent = 'Apply to this version';
+                btn.textContent = 'Apply to this draft';
             }
         });
 }
