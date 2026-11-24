@@ -203,6 +203,72 @@ class ResearchLog(db.Model):
         return f'<ResearchLog {self.level} {self.phase}: {self.message[:50]}>'
 
 
+class ResearchRun(db.Model):
+    """One execution of the research pipeline, with live progress for the UI.
+
+    The task writes progress on its own connection (see app.research.progress)
+    so updates show up while candidates are still uncommitted in the task's
+    session.
+    """
+    ACTIVE_STATUSES = ('queued', 'running')
+    # A run whose heartbeat is older than this is assumed dead (worker restart,
+    # hard time limit). The task's hard limit is 60 minutes, and progress is
+    # written at least every few items, so 15 quiet minutes means it's gone.
+    STALE_AFTER_SECONDS = 15 * 60
+
+    id = db.Column(db.Integer, primary_key=True)
+    publication_id = db.Column(db.Integer, db.ForeignKey('publication.id'), nullable=False, index=True)
+    trigger = db.Column(db.String(32), nullable=False, default='manual')  # manual, schedule, api, admin
+    status = db.Column(db.String(16), nullable=False, default='queued', index=True)  # queued, running, completed, failed
+    phase = db.Column(db.String(32), nullable=True)  # discovery, triage, scoring, saving
+    message = db.Column(db.String(512), nullable=True)
+    progress_done = db.Column(db.Integer, nullable=False, default=0)
+    progress_total = db.Column(db.Integer, nullable=False, default=0)
+    stats = db.Column(db.JSON, nullable=True)
+    error = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    publication = db.relationship('Publication', backref=db.backref('research_runs', lazy='dynamic'))
+
+    @property
+    def is_stale(self):
+        if self.status not in self.ACTIVE_STATUSES:
+            return False
+        last = self.updated_at or self.created_at
+        return last is not None and (datetime.utcnow() - last).total_seconds() > self.STALE_AFTER_SECONDS
+
+    @property
+    def is_active(self):
+        return self.status in self.ACTIVE_STATUSES and not self.is_stale
+
+    def to_dict(self):
+        def iso(dt):
+            return dt.isoformat() + 'Z' if dt else None
+        return {
+            'id': self.id,
+            'publication_id': self.publication_id,
+            'trigger': self.trigger,
+            'status': 'stale' if self.is_stale else self.status,
+            'active': self.is_active,
+            'phase': self.phase,
+            'message': self.message,
+            'progress_done': self.progress_done,
+            'progress_total': self.progress_total,
+            'stats': self.stats,
+            'error': self.error,
+            'created_at': iso(self.created_at),
+            'started_at': iso(self.started_at),
+            'finished_at': iso(self.finished_at),
+            'updated_at': iso(self.updated_at),
+        }
+
+    def __repr__(self):
+        return f'<ResearchRun {self.id} pub={self.publication_id} {self.status}>'
+
+
 class SourceAudit(db.Model):
     """A user-triggered holistic audit of a publication's news sources.
 

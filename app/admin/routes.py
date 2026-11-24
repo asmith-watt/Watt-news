@@ -878,10 +878,13 @@ def trigger_content_workflow(id):
 def trigger_research(id):
     publication = Publication.query.get_or_404(id)
 
-    from app.tasks import research_publication_sources
-    research_publication_sources.delay(publication.id)
+    from app.tasks import start_research
+    _, created = start_research(publication.id, trigger='admin')
 
-    flash(f'Research triggered for {publication.name}!', 'success')
+    if created:
+        flash(f'Research triggered for {publication.name}!', 'success')
+    else:
+        flash(f'Research is already running for {publication.name}.', 'info')
     return redirect(url_for('admin.publications'))
 
 

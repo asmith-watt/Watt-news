@@ -220,6 +220,27 @@
 .cd-spin.hidden { display: none; }
 @keyframes cd-spin { to { transform: rotate(360deg); } }
 
+/* Research run status (candidates page) */
+.cd-run { margin: -4px 0 20px; flex-wrap: wrap; }
+.cd-run-body { flex: 1 1 260px; min-width: 0; }
+.cd-run-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.cd-run-title { font-weight: 600; }
+.cd-run-msg { overflow-wrap: anywhere; }
+.cd-run-meta { margin-left: auto; font-size: 12.5px; opacity: .75; white-space: nowrap; }
+.cd-run-steps { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; padding: 0; list-style: none; font-size: 12px; }
+.cd-run-steps.hidden { display: none; }
+.cd-run-steps li { display: flex; align-items: center; gap: 5px; opacity: .5; }
+.cd-run-steps li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; }
+.cd-run-steps li.is-done { opacity: .8; }
+.cd-run-steps li.is-done::before { background: currentColor; }
+.cd-run-steps li.is-current { opacity: 1; font-weight: 600; }
+.cd-run-steps li.is-current::before { background: currentColor; box-shadow: 0 0 0 3px rgba(35, 57, 95, .15); }
+.cd-run-bar { height: 4px; margin-top: 8px; border-radius: 2px; background: rgba(35, 57, 95, .12); overflow: hidden; }
+.cd-run-bar.hidden { display: none; }
+.cd-run-bar > span { display: block; height: 100%; width: 0; background: currentColor; border-radius: 2px; transition: width .4s ease; }
+.cd-run-actions { display: flex; gap: 8px; }
+.cd-run-actions:empty { display: none; }
+
 /* Soften Tailwind colour classes that page scripts still set on status boxes and badges */
 .cd .bg-yellow-100 { background-color: #F6F1E3; }
 .cd .text-yellow-700, .cd .text-yellow-800 { color: #6E5A33; }
