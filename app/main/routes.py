@@ -1301,11 +1301,29 @@ def trigger_research(id):
         flash('Access denied', 'error')
         return redirect(url_for('main.candidates'))
 
-    from app.tasks import research_publication_sources
-    research_publication_sources.delay(publication.id)
+    from app.tasks import start_research
+    run, created = start_research(publication.id, trigger='manual')
 
-    flash(f'Research triggered for {publication.name}. New candidates will appear shortly.', 'success')
+    if request.accept_mimetypes.best == 'application/json':
+        return jsonify({'created': created, 'run': run.to_dict()}), (202 if created else 200)
+
+    if created:
+        flash(f'Research started for {publication.name}. Progress is shown below.', 'success')
+    else:
+        flash(f'Research is already running for {publication.name}.', 'info')
     return redirect(url_for('main.candidates', publication_id=id))
+
+
+@bp.route('/publication/<int:id>/research-status')
+@login_required
+def research_status(id):
+    """Latest research run for a publication, polled by the candidates page."""
+    if not current_user.has_role('admin') and not current_user.has_publication_access(id):
+        return jsonify({'error': 'Access denied'}), 403
+
+    from app.research.progress import latest_run
+    run = latest_run(id)
+    return jsonify({'run': run.to_dict() if run else None})
 
 
 @bp.route('/candidate/<int:id>/status', methods=['POST'])

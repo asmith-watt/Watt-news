@@ -54,7 +54,7 @@ _COVERAGE_VALUES = {'same_story', 'follow_up'}
 
 
 def triage_items(items, source_types, industry_description, reader_personas,
-                 house_index=None):
+                 house_index=None, on_progress=None):
     """Classify a list of discovered items using Claude.
 
     Parameters
@@ -71,6 +71,8 @@ def triage_items(items, source_types, industry_description, reader_personas,
         Recently published house articles from
         ``app.research.house_content.build_house_index``. When given, each
         item is also checked against it.
+    on_progress : callable, optional
+        Called as ``on_progress(done, total)`` after each batch.
 
     Returns
     -------
@@ -116,6 +118,8 @@ def triage_items(items, source_types, industry_description, reader_personas,
         results.extend(batch_results)
         total_fetches += fetches
         api_calls += 1
+        if on_progress:
+            on_progress(min(start + batch_size, len(items)), len(items))
 
     logger.info(
         f"Triage complete: {len(results)} items, "

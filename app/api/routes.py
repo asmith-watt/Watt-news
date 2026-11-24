@@ -1192,10 +1192,12 @@ def trigger_research(publication_id):
     if not publication:
         return jsonify({'error': 'Publication not found'}), 404
 
-    from app.tasks import research_publication_sources
-    research_publication_sources.delay(publication_id)
+    from app.tasks import start_research
+    run, created = start_research(publication_id, trigger='api')
 
     return jsonify({
         'success': True,
-        'message': f'Research triggered for publication {publication_id}',
+        'message': (f'Research triggered for publication {publication_id}' if created
+                    else f'Research already running for publication {publication_id}'),
+        'research_run': run.to_dict(),
     })

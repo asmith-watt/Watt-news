@@ -49,15 +49,32 @@
             </div>
         </div>
         {% if current_publication %}
-        <form method="POST" action="{{ url_for('main.trigger_research', id=current_publication.id) }}"
-              onsubmit="return confirm('Run research for {{ current_publication.name }}? This can take several minutes.');">
-            <button type="submit" class="cd-btn">
+        <form id="research-form" method="POST" action="{{ url_for('main.trigger_research', id=current_publication.id) }}"
+              data-status-url="{{ url_for('main.research_status', id=current_publication.id) }}"
+              data-publication-name="{{ current_publication.name }}">
+            <button type="submit" class="cd-btn" id="research-btn">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
                 Run research
             </button>
         </form>
         {% endif %}
     </header>
+
+    {% if current_publication %}
+    <div id="research-run" class="cd-notice cd-run hidden" role="status" aria-live="polite">
+        <span id="research-run-spin" class="cd-spin hidden" aria-hidden="true"></span>
+        <div class="cd-run-body">
+            <div class="cd-run-line">
+                <span id="research-run-title" class="cd-run-title"></span>
+                <span id="research-run-msg" class="cd-run-msg"></span>
+                <span id="research-run-meta" class="cd-run-meta num"></span>
+            </div>
+            <ol id="research-run-steps" class="cd-run-steps hidden"></ol>
+            <div id="research-run-bar" class="cd-run-bar hidden"><span></span></div>
+        </div>
+        <div id="research-run-actions" class="cd-run-actions"></div>
+    </div>
+    {% endif %}
 
     <nav class="cd-bar" aria-label="Filter candidates">
         <div class="cd-tabs">
@@ -222,6 +239,150 @@
 </div>
 
 <script>
+// ── Research run status ─────────────────────────────────────────
+// Polls the latest run: every 3s while one is queued/running, every 30s
+// otherwise so scheduled runs show up too. Pauses while the tab is hidden.
+(function () {
+    const form = document.getElementById('research-form');
+    if (!form) return;
+    const statusUrl = form.dataset.statusUrl;
+    const btn = document.getElementById('research-btn');
+    const btnHtml = btn.innerHTML;
+    const box = document.getElementById('research-run');
+    const el = id => document.getElementById('research-run-' + id);
+
+    const ACTIVE_MS = 3000, IDLE_MS = 30000;
+    // Show a finished run for this long after it ends (or always, if it
+    // finished while this page was watching it).
+    const RECENT_MS = 30 * 60 * 1000;
+    const STEPS = [['discovery', 'Scan sources'], ['triage', 'Triage'], ['scoring', 'Score & enrich'], ['saving', 'Save']];
+
+    let timer = null, lastRun = null, watchedRunId = null, dismissedRunId = null;
+
+    function fmtDuration(ms) {
+        const s = Math.max(0, Math.round(ms / 1000));
+        const m = Math.floor(s / 60);
+        return m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+    }
+
+    function setButton(active) {
+        btn.disabled = active;
+        btn.innerHTML = active ? '<span class="cd-spin" aria-hidden="true"></span> Researching…' : btnHtml;
+    }
+
+    function render(run) {
+        const now = Date.now();
+        const finishedAt = run && run.finished_at ? Date.parse(run.finished_at) : null;
+        const show = run && run.id !== dismissedRunId && (
+            run.active || run.id === watchedRunId || (finishedAt && now - finishedAt < RECENT_MS));
+        setButton(!!(run && run.active));
+        if (!show) { box.classList.add('hidden'); return; }
+
+        box.classList.remove('hidden', 'is-working', 'is-done', 'is-error');
+        el('spin').classList.toggle('hidden', !run.active);
+        const actions = el('actions');
+        actions.innerHTML = '';
+
+        if (run.active) {
+            watchedRunId = run.id;
+            box.classList.add('is-working');
+            const queued = run.status === 'queued';
+            el('title').textContent = queued ? 'Research queued' : 'Researching';
+            el('msg').textContent = run.message || '';
+            const since = Date.parse(run.started_at || run.created_at);
+            el('meta').textContent = (queued ? 'waiting ' : '') + fmtDuration(now - since);
+
+            const phaseIdx = STEPS.findIndex(([key]) => key === run.phase);
+            const steps = el('steps');
+            steps.classList.toggle('hidden', queued);
+            steps.innerHTML = STEPS.map(([key, label], i) => {
+                const cls = phaseIdx < 0 ? '' : i < phaseIdx ? 'is-done' : i === phaseIdx ? 'is-current' : '';
+                return `<li class="${cls}">${label}</li>`;
+            }).join('');
+
+            const bar = el('bar');
+            const hasTotal = run.progress_total > 0 && !queued;
+            bar.classList.toggle('hidden', !hasTotal);
+            if (hasTotal) {
+                const pct = Math.min(100, Math.round(100 * run.progress_done / run.progress_total));
+                bar.firstElementChild.style.width = pct + '%';
+            }
+            return;
+        }
+
+        el('steps').classList.add('hidden');
+        el('bar').classList.add('hidden');
+        const started = Date.parse(run.started_at || run.created_at);
+        const took = finishedAt && started ? `took ${fmtDuration(finishedAt - started)}` : '';
+
+        if (run.status === 'completed') {
+            box.classList.add('is-done');
+            const st = run.stats || {};
+            const n = st.new_candidates || 0;
+            el('title').textContent = 'Research finished';
+            const parts = [`${n} new candidate${n === 1 ? '' : 's'}`];
+            if (st.triage_rejected) parts.push(`${st.triage_rejected} rejected in triage`);
+            if (st.triage_already_covered) parts.push(`${st.triage_already_covered} already covered`);
+            if (st.errors) parts.push(`${st.errors} error${st.errors === 1 ? '' : 's'}`);
+            el('msg').textContent = parts.join(' · ');
+            el('meta').textContent = took;
+            if (n > 0) {
+                const a = document.createElement('a');
+                a.href = window.location.href;
+                a.className = 'cd-btn cd-btn--sm';
+                a.textContent = 'Show new candidates';
+                actions.appendChild(a);
+            }
+        } else {
+            box.classList.add('is-error');
+            el('title').textContent = run.status === 'stale' ? 'Research stopped responding' : 'Research failed';
+            el('msg').textContent = run.status === 'stale'
+                ? 'No progress for 15 minutes; the worker may have restarted. You can run it again.'
+                : (run.error || run.message || '');
+            el('meta').textContent = took;
+        }
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'cd-btn cd-btn--sm cd-btn--quiet';
+        close.textContent = 'Dismiss';
+        close.onclick = () => { dismissedRunId = run.id; render(run); };
+        actions.appendChild(close);
+    }
+
+    function schedule() {
+        clearTimeout(timer);
+        if (document.hidden) return;
+        timer = setTimeout(poll, lastRun && lastRun.active ? ACTIVE_MS : IDLE_MS);
+    }
+
+    function poll() {
+        fetch(statusUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(data => { lastRun = data.run; render(lastRun); })
+            .catch(() => {})
+            .finally(schedule);
+    }
+
+    // Keep the elapsed clock ticking between polls.
+    setInterval(() => { if (lastRun && lastRun.active && !document.hidden) render(lastRun); }, 1000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) clearTimeout(timer); else poll();
+    });
+
+    form.addEventListener('submit', e => {
+        e.preventDefault();
+        if (!confirm(`Run research for ${form.dataset.publicationName}? This can take several minutes.`)) return;
+        setButton(true);
+        fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(data => { lastRun = data.run; watchedRunId = data.run.id; render(lastRun); schedule(); })
+            .catch(() => { setButton(false); form.submit(); });
+    });
+
+    poll();
+})();
+
 const STATUS_LABELS = { new: 'New', selected: 'Selected', rejected: 'Rejected', processed: 'Sent to writer' };
 
 function showDetail(candidateId) {

@@ -248,8 +248,11 @@ def trigger_scheduled_candidate_content_workflow(publication_id):
     if not has_sources:
         return {'error': f'Publication {publication_id} has no active sources'}
 
-    research_publication_sources.delay(publication_id)
-    return {'success': True, 'publication_id': publication_id}
+    run, created = start_research(publication_id, trigger='schedule')
+    if not created:
+        return {'skipped': True, 'reason': f'Research run {run.id} already in progress',
+                'publication_id': publication_id}
+    return {'success': True, 'publication_id': publication_id, 'research_run_id': run.id}
 
 
 @celery.task(name='app.tasks.check_candidate_content_schedules')
@@ -286,12 +289,75 @@ def check_candidate_content_schedules():
     }
 
 
+def start_research(publication_id, trigger='manual'):
+    """Record a queued ResearchRun and enqueue the research task for it.
+
+    Returns the existing run instead if one is already queued or running for
+    the publication, so repeated clicks don't stack up duplicate runs.
+    """
+    from app.models import ResearchRun
+    from app.research.progress import active_run
+
+    existing = active_run(publication_id)
+    if existing:
+        return existing, False
+
+    run = ResearchRun(publication_id=publication_id, trigger=trigger, status='queued',
+                      message='Waiting for a worker')
+    db.session.add(run)
+    db.session.commit()
+    research_publication_sources.delay(publication_id, run_id=run.id)
+    return run, True
+
+
 @celery.task(name='app.tasks.research_publication_sources', bind=True, max_retries=2, default_retry_delay=60, time_limit=3600, soft_time_limit=3300)
-def research_publication_sources(self, publication_id):
+def research_publication_sources(self, publication_id, run_id=None):
     """
     Scan all active sources for a publication, discover candidate articles,
     deduplicate, triage via LLM, score, enrich, and store them.
+
+    Progress is reported to the ResearchRun ``run_id``; runs enqueued without
+    one (older callers, queued before deploy) get a run created here.
     """
+    from celery.exceptions import Retry
+    from app.models import ResearchRun
+    from app.research.progress import RunProgress
+
+    if run_id is None:
+        try:
+            run = ResearchRun(publication_id=publication_id, trigger='unknown', status='queued')
+            db.session.add(run)
+            db.session.commit()
+            run_id = run.id
+        except Exception as e:
+            db.session.rollback()
+            logger.warning(f"Could not create research run for pub {publication_id}: {e}")
+
+    progress = RunProgress(run_id)
+    progress.start()
+    try:
+        result = _run_research(self, publication_id, progress)
+    except Retry as e:
+        progress.requeue(e.exc or e)
+        raise
+    except SoftTimeLimitExceeded:
+        db.session.rollback()
+        progress.fail('Research hit the time limit before finishing; nothing from this run was saved.')
+        raise
+    except Exception as e:
+        db.session.rollback()
+        progress.fail(e)
+        raise
+
+    if 'error' in result:
+        progress.fail(result['error'])
+    else:
+        progress.complete(result)
+    return result
+
+
+def _run_research(self, publication_id, progress):
+    """Body of research_publication_sources; ``self`` is the bound task."""
     from app.research.scrapers import get_scraper, SERPAPI_SOURCE_TYPES
     from app.research.dedup import (
         url_hash, normalize_url, is_duplicate_candidate, sanitize_url,
@@ -377,7 +443,9 @@ def research_publication_sources(self, publication_id):
     # so overlapping keyword lists don't pay for the same search twice.
     serpapi_searched = set()
 
-    for source in sources:
+    progress.phase('discovery', f'Scanning {len(sources)} sources', total=len(sources))
+    for source_index, source in enumerate(sources):
+        progress.step(source_index, f'Scanning {source.name} ({source_index + 1} of {len(sources)})')
         scraper = get_scraper(source.source_type)
         if not scraper:
             logger.info(f"No scraper for source type '{source.source_type}', skipping {source.name}")
@@ -446,6 +514,9 @@ def research_publication_sources(self, publication_id):
                 stats['errors'] += 1
                 continue
 
+    progress.update(force=True, progress_done=len(sources), stats=dict(stats),
+                    message=f"Found {len(pending_items)} new items across {stats['sources_scanned']} sources")
+
     # ── Phase 2: LLM Triage ────────────────────────────────────────
     # Classify pending items; not_news → save as rejected, skip enrichment.
     verdict_map = {}  # url → {verdict, reasoning}
@@ -465,6 +536,8 @@ def research_publication_sources(self, publication_id):
                 triage_source_types.append(source.source_type)
 
         if triage_items_list:
+            progress.phase('triage', f'Triaging {len(triage_items_list)} items with the LLM',
+                           total=len(triage_items_list))
             # What we (and sister sites) already published, so triage can
             # reject stories we've run. Empty without a House Content source.
             try:
@@ -482,6 +555,8 @@ def research_publication_sources(self, publication_id):
                 industry_description=publication.industry_description or '',
                 reader_personas=publication.reader_personas or '',
                 house_index=house_index,
+                on_progress=lambda done, total: progress.step(
+                    done, f'Triaged {done} of {total} items'),
             )
             for v in verdicts:
                 verdict_map[v['url']] = v
@@ -497,7 +572,10 @@ def research_publication_sources(self, publication_id):
                     stats['triage_house_flagged'] += 1
 
     # ── Phase 3: Score + Enrich + Save ─────────────────────────────
-    for item, source, hash_val in pending_items:
+    progress.phase('scoring', f'Scoring and enriching {len(pending_items)} items',
+                   total=len(pending_items))
+    for item_index, (item, source, hash_val) in enumerate(pending_items):
+        progress.step(item_index, f'Scoring and enriching item {item_index + 1} of {len(pending_items)}')
         try:
             verdict_info = verdict_map.get(item.url, {})
             verdict = verdict_info.get('verdict')
@@ -642,6 +720,8 @@ def research_publication_sources(self, publication_id):
                           details={'exception': str(e)})
             stats['errors'] += 1
             continue
+
+    progress.phase('saving', f"Saving {stats['new_candidates']} candidates")
 
     # Commit all new candidates and update last_research_run.
     # Use flush-first approach so IntegrityErrors (e.g. duplicate url_hash
