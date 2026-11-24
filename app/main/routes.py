@@ -1254,13 +1254,13 @@ def candidates():
         query = query.outerjoin(NewsSource, CandidateArticle.news_source_id == NewsSource.id)
 
     if publication_id:
-        query = query.filter_by(publication_id=publication_id)
+        query = query.filter(CandidateArticle.publication_id == publication_id)
     elif not current_user.has_role('admin') and current_user.publications:
         pub_ids = current_user.get_publication_ids()
         query = query.filter(CandidateArticle.publication_id.in_(pub_ids))
 
     if status != 'all':
-        query = query.filter_by(status=status)
+        query = query.filter(CandidateArticle.status == status)
 
     if min_score > 0:
         query = query.filter(CandidateArticle.relevance_score >= min_score)
