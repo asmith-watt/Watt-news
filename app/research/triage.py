@@ -52,6 +52,46 @@ SKIP_ENRICHMENT_VERDICTS = {'already_covered'}
 
 _COVERAGE_VALUES = {'same_story', 'follow_up'}
 
+# A same-story match must share at least this many distinctive words with
+# the house article; a follow-up at least one. The model sometimes cites a
+# house article that has nothing to do with the item, and a shared word or
+# two is the minimum any genuine match has (the company, agency, place...).
+_SAME_STORY_MIN_OVERLAP = 2
+_FOLLOW_UP_MIN_OVERLAP = 1
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+# Words too generic in trade news to show two pieces are about the same thing.
+_OVERLAP_STOPWORDS = frozenset('''
+    about above after again against also amid among announce announced announces
+    back been before being below between both business could during each first
+    from further have having here into just last latest make makes more most
+    much news north south east west american americas national global world
+    over plan plans report reports said says some state states such than that
+    their them then there these they this those through under until update
+    very week weeks what when where which while will with would year years
+    deal deals new company companies industry market markets price prices
+    sales says today announces launch launches open opens closes close
+    '''.split())
+
+
+def _distinctive_words(text):
+    words = set()
+    for w in _WORD_RE.findall((text or '').lower().replace("'s", '')):
+        if len(w) < 4 and not (w.isdigit() and len(w) >= 3):
+            continue
+        if w.endswith('s') and len(w) > 4 and not w.endswith('ss'):
+            w = w[:-1]
+        if w not in _OVERLAP_STOPWORDS:
+            words.add(w)
+    return words
+
+
+def _coverage_overlap(item, house_entry):
+    """Distinctive words shared by an item and a house article."""
+    item_words = _distinctive_words(f"{item.title or ''} {item.snippet or ''}")
+    house_words = _distinctive_words(f"{house_entry.get('title') or ''} {house_entry.get('deck') or ''}")
+    return item_words & house_words
+
 
 def triage_items(items, source_types, industry_description, reader_personas,
                  house_index=None, on_progress=None):
@@ -281,6 +321,8 @@ def _build_system_prompt(industry_description, reader_personas, house_index=None
         "proposal, new figures, a reaction or consequence). This is still worth writing.\n"
         "- Sharing a topic, company, or commodity is NOT enough. Only match when it is "
         "the same story or a direct continuation of it.\n"
+        "- Most items match nothing: leave covered_by and coverage null unless you can "
+        "name the specific event both pieces report.\n"
         "Add two fields to each object: covered_by (the house article id such as \"H3\", "
         "or null) and coverage (\"same_story\", \"follow_up\", or null). Keep verdict as "
         "your news classification; the coverage fields are judged separately. When you set "
@@ -382,7 +424,7 @@ def _parse_response(response, items, house_index=None):
             except (ValueError, TypeError):
                 pass
 
-        verdict, house_coverage = _apply_coverage(verdict, v, house_index)
+        verdict, house_coverage = _apply_coverage(verdict, v, house_index, item)
 
         results.append({
             'url': item.url,
@@ -395,7 +437,7 @@ def _parse_response(response, items, house_index=None):
     return results
 
 
-def _apply_coverage(verdict, raw, house_index):
+def _apply_coverage(verdict, raw, house_index, item=None):
     """Turn the model's coverage fields into a final verdict and a flag.
 
     - Same story on the publication's own site (or an unpublished draft here)
@@ -404,6 +446,10 @@ def _apply_coverage(verdict, raw, house_index):
     - Same story on a sister site, or a follow-up to any house article -> the
       verdict stands and the candidate carries a house_coverage flag so the
       editor can see the related article.
+
+    A cited match is dropped when the item and the house article share too
+    few distinctive words to plausibly be the same story (see
+    _coverage_overlap); the model occasionally cites an unrelated article.
 
     Returns (verdict, house_coverage dict or None).
     """
@@ -418,6 +464,17 @@ def _apply_coverage(verdict, raw, house_index):
     match = next((h for h in house_index if h['id'] == covered_by.strip()), None)
     if not match:
         return verdict, None
+
+    if item is not None:
+        shared = _coverage_overlap(item, match)
+        needed = _SAME_STORY_MIN_OVERLAP if coverage == 'same_story' else _FOLLOW_UP_MIN_OVERLAP
+        if len(shared) < needed:
+            logger.info(
+                f"Triage coverage dropped: {item.url} cited {match['id']} "
+                f"({match['title']!r}) as {coverage} but they share {sorted(shared) or 'no'} "
+                f"distinctive words"
+            )
+            return verdict, None
 
     if coverage == 'same_story':
         relation = 'same_story_own' if match['scope'] == 'own' else 'same_story_sister'
